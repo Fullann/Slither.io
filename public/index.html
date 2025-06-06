@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slither.io Clone</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui">
+            <div id="startScreen">
+                <h1>🐍 SLITHER.IO</h1>
+                <input type="text" id="playerNameInput" placeholder="Entrez votre nom" maxlength="20">
+                <button id="startButton">Commencer à jouer</button>
+            </div>
+
+            <div id="deathScreen">
+                <h2>💀 GAME OVER</h2>
+                <div id="finalScore">Score: 0</div>
+                <button id="respawnButton">Rejouer</button>
+            </div>
+
+            <div id="score">Score: 0</div>
+
+            <div id="leaderboard">
+                <h3>🏆 Classement</h3>
+                <div id="leaderboardList"></div>
+            </div>
+
+            <div id="instructions">
+                <div>🖱️ Souris pour diriger</div>
+                <div>🍎 Mangez pour grandir</div>
+                <div>⚡ Clic maintenu = Boost</div>
+                <div>🚀 Espace = Boost (alternatif)</div>
+                <div style="font-size: 0.8em; color: #ffa502;">Attention: Le boost consomme votre longueur!</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/game.js"></script>
+</body>
+</html>
