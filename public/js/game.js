@@ -6,6 +6,21 @@ class SlitherGame {
         this.minimap = document.getElementById('minimap');
         this.minimapCtx = this.minimap.getContext('2d');
         
+        // Optimisations de rendu
+        this.ctx.imageSmoothingEnabled = false;
+        
+        // Buffer pour l'interpolation
+        this.playerBuffer = {};
+        this.lastServerUpdate = Date.now();
+        this.lastPositionSent = Date.now();
+        this.lastSentPosition = { x: 0, y: 0, angle: 0 };
+        
+        // Variables d'optimisation
+        this.renderDistance = 600;
+        this.lastRender = Date.now();
+        this.targetFPS = 60;
+        this.frameInterval = 1000 / this.targetFPS;
+        
         this.setupCanvas();
         this.initializeGame();
         this.setupEventListeners();
@@ -17,8 +32,6 @@ class SlitherGame {
     setupCanvas() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
-        
-        // Afficher le curseur
         this.canvas.style.cursor = 'crosshair';
         
         window.addEventListener('resize', () => {
@@ -41,27 +54,23 @@ class SlitherGame {
         this.kills = 0;
         this.gameStartTime = Date.now();
         
-        // Récupérer les données utilisateur
         const userData = JSON.parse(localStorage.getItem('userData') || '{}');
         this.playerName = userData.username || 'Joueur';
         this.playerColor = localStorage.getItem('playerColor') || '#ef4444';
         this.bestScore = userData.bestScore || 0;
         
-        // Afficher les informations utilisateur
         document.getElementById('playerName').textContent = this.playerName;
         document.getElementById('bestScore').textContent = Utils.formatNumber(this.bestScore);
         document.getElementById('currentKills').textContent = '0';
     }
 
     setupEventListeners() {
-        // Mouvement de la souris
         this.canvas.addEventListener('mousemove', (e) => {
             const rect = this.canvas.getBoundingClientRect();
             this.mouse.x = e.clientX - rect.left;
             this.mouse.y = e.clientY - rect.top;
         });
 
-        // Clic pour accélérer
         this.canvas.addEventListener('mousedown', (e) => {
             if (e.button === 0 && this.gameRunning && !this.isPaused) {
                 this.boosting = true;
@@ -77,12 +86,10 @@ class SlitherGame {
             }
         });
 
-        // Empêcher le menu contextuel
         this.canvas.addEventListener('contextmenu', (e) => {
             e.preventDefault();
         });
 
-        // Clavier
         document.addEventListener('keydown', (e) => {
             this.keys[e.code] = true;
             
@@ -96,7 +103,6 @@ class SlitherGame {
             this.keys[e.code] = false;
         });
 
-        // Boutons de l'interface
         document.getElementById('playAgainBtn').addEventListener('click', () => {
             this.respawn();
         });
@@ -118,9 +124,11 @@ class SlitherGame {
         }
 
         this.socket = io({
-            auth: {
-                token: token
-            }
+            auth: { token: token },
+            forceNew: true,
+            reconnection: true,
+            timeout: 5000,
+            transports: ['websocket', 'polling']
         });
 
         this.socket.on('connect', () => {
@@ -149,9 +157,22 @@ class SlitherGame {
 
         this.socket.on('playerMoved', (data) => {
             if (this.players[data.id]) {
-                this.players[data.id].x = data.x;
-                this.players[data.id].y = data.y;
-                this.players[data.id].angle = data.angle;
+                // Stocker la position précédente pour l'interpolation
+                this.playerBuffer[data.id] = {
+                    from: {
+                        x: this.players[data.id].x,
+                        y: this.players[data.id].y,
+                        angle: this.players[data.id].angle
+                    },
+                    to: {
+                        x: data.x,
+                        y: data.y,
+                        angle: data.angle
+                    },
+                    startTime: Date.now()
+                };
+                
+                // Mettre à jour immédiatement les autres propriétés
                 this.players[data.id].segments = data.segments;
                 this.players[data.id].speed = data.speed;
                 this.players[data.id].boosting = data.boosting;
@@ -160,6 +181,7 @@ class SlitherGame {
 
         this.socket.on('playerLeft', (playerId) => {
             delete this.players[playerId];
+            delete this.playerBuffer[playerId];
         });
 
         this.socket.on('foodEaten', (data) => {
@@ -177,12 +199,12 @@ class SlitherGame {
 
         this.socket.on('playerDied', (data) => {
             if (data.playerId === this.playerId) {
-                // Ne pas afficher l'écran de mort ici, attendre les stats
+                // Attendre les stats
             } else {
                 delete this.players[data.playerId];
+                delete this.playerBuffer[data.playerId];
                 this.food = data.newFood;
                 
-                // Incrémenter les kills si c'est nous qui avons tué
                 const player = this.players[this.playerId];
                 if (player) {
                     this.kills++;
@@ -197,17 +219,34 @@ class SlitherGame {
         });
 
         this.socket.on('gameUpdate', (state) => {
-            // Mettre à jour avec tous les joueurs (humains + bots)
-            this.players = state.players;
+            this.lastServerUpdate = Date.now();
+            
+            if (state.players) {
+                // Mettre à jour seulement les nouveaux joueurs ou les changements importants
+                for (const playerId in state.players) {
+                    if (!this.players[playerId] || playerId.startsWith('bot_')) {
+                        this.players[playerId] = state.players[playerId];
+                    }
+                }
+            }
+            
             this.updateLeaderboard();
         });
     }
 
     gameLoop() {
+        const now = Date.now();
+        
         if (this.gameRunning && !this.isPaused) {
             this.update();
         }
-        this.render();
+        
+        // Limiter le rendu à 30 FPS
+        if (now - this.lastRender >= this.frameInterval) {
+            this.render();
+            this.lastRender = now;
+        }
+        
         requestAnimationFrame(() => this.gameLoop());
     }
 
@@ -215,66 +254,105 @@ class SlitherGame {
         const player = this.players[this.playerId];
         if (!player) return;
 
-        // Calculer l'angle vers la souris
+        const now = Date.now();
+        // Limiter les mises à jour de position à 20 FPS
+        if (now - this.lastPositionSent < 50) {
+            return;
+        }
+
         const centerX = this.canvas.width / 2;
         const centerY = this.canvas.height / 2;
         const targetAngle = Utils.angle(centerX, centerY, this.mouse.x, this.mouse.y);
         
-        // Mouvement fluide de la direction
         let angleDiff = targetAngle - player.angle;
         while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
         while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
         
         player.angle += angleDiff * 0.1;
 
-        // Vitesse (boost si clic maintenu)
         const baseSpeed = 3;
         const boostSpeed = 6;
         player.speed = this.boosting ? boostSpeed : baseSpeed;
         player.boosting = this.boosting;
 
-        // Déplacement
         player.x += Math.cos(player.angle) * player.speed;
         player.y += Math.sin(player.angle) * player.speed;
 
-        // Limites du monde
         player.x = Utils.clamp(player.x, 50, this.worldSize - 50);
         player.y = Utils.clamp(player.y, 50, this.worldSize - 50);
 
-        // Mise à jour des segments
         this.updateSegments(player);
-
-        // Vérification des collisions avec la nourriture
         this.checkFoodCollisions(player);
-
-        // Vérification des collisions avec les autres joueurs
         this.checkPlayerCollisions(player);
-
-        // Mise à jour de la caméra
         this.updateCamera(player);
 
-        // Envoyer la position au serveur
-        this.socket.emit('updatePosition', {
-            x: player.x,
-            y: player.y,
-            angle: player.angle,
-            segments: player.segments,
-            speed: player.speed,
-            boosting: this.boosting
-        });
+        // Envoyer seulement si position a changé significativement
+        const positionChanged = 
+            Math.abs(player.x - this.lastSentPosition.x) > 3 ||
+            Math.abs(player.y - this.lastSentPosition.y) > 3 ||
+            Math.abs(player.angle - this.lastSentPosition.angle) > 0.1;
+
+        if (positionChanged) {
+            this.socket.emit('updatePosition', {
+                x: Math.round(player.x),
+                y: Math.round(player.y),
+                angle: Math.round(player.angle * 100) / 100,
+                segments: player.segments.slice(0, 10), // Limiter les segments envoyés
+                speed: player.speed,
+                boosting: this.boosting
+            });
+            
+            this.lastSentPosition = { x: player.x, y: player.y, angle: player.angle };
+            this.lastPositionSent = now;
+        }
+    }
+
+    // Interpolation fluide des mouvements
+    interpolatePlayerMovements() {
+        const now = Date.now();
+        const interpolationTime = 100;
+        
+        for (const playerId in this.playerBuffer) {
+            const buffer = this.playerBuffer[playerId];
+            const elapsed = now - buffer.startTime;
+            
+            if (elapsed < interpolationTime && this.players[playerId]) {
+                const progress = elapsed / interpolationTime;
+                const smoothProgress = this.easeOutCubic(progress);
+                
+                this.players[playerId].x = this.lerp(buffer.from.x, buffer.to.x, smoothProgress);
+                this.players[playerId].y = this.lerp(buffer.from.y, buffer.to.y, smoothProgress);
+                this.players[playerId].angle = this.lerpAngle(buffer.from.angle, buffer.to.angle, smoothProgress);
+            } else if (elapsed >= interpolationTime) {
+                delete this.playerBuffer[playerId];
+            }
+        }
+    }
+
+    easeOutCubic(t) {
+        return 1 - Math.pow(1 - t, 3);
+    }
+
+    lerp(start, end, factor) {
+        return start + (end - start) * factor;
+    }
+
+    lerpAngle(start, end, factor) {
+        let diff = end - start;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        return start + diff * factor;
     }
 
     updateSegments(player) {
         const segmentDistance = 8;
         
-        // Ajouter un nouveau segment en tête
         player.segments.unshift({
             x: player.x,
             y: player.y,
             size: player.size
         });
 
-        // Ajuster les positions des segments
         for (let i = 1; i < player.segments.length; i++) {
             const prevSegment = player.segments[i - 1];
             const currentSegment = player.segments[i];
@@ -288,8 +366,7 @@ class SlitherGame {
             }
         }
 
-        // Maintenir la longueur appropriée
-        const targetLength = Math.max(5, Math.floor(player.score / 5) + 5);
+        const targetLength = Math.max(5, Math.min(Math.floor(player.score / 5) + 5, 25)); // Limiter à 25
         while (player.segments.length > targetLength) {
             player.segments.pop();
         }
@@ -313,8 +390,10 @@ class SlitherGame {
             
             const otherPlayer = this.players[otherPlayerId];
             
-            // Vérifier collision avec les segments de l'autre joueur
-            for (const segment of otherPlayer.segments) {
+            // Vérifier seulement les premiers segments pour optimiser
+            const segmentsToCheck = Math.min(otherPlayer.segments.length, 8);
+            for (let i = 0; i < segmentsToCheck; i++) {
+                const segment = otherPlayer.segments[i];
                 const distance = Utils.distance(player.x, player.y, segment.x, segment.y);
                 
                 if (distance < player.size + segment.size - 5) {
@@ -338,26 +417,20 @@ class SlitherGame {
         this.ctx.fillStyle = '#1a1a2e';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Dessiner la grille
+        // Appliquer l'interpolation
+        this.interpolatePlayerMovements();
+
         this.drawGrid();
 
-        // Sauvegarder le contexte pour les transformations de caméra
         this.ctx.save();
         this.ctx.translate(-this.camera.x, -this.camera.y);
 
-        // Dessiner la nourriture
-        this.drawFood();
+        this.drawVisibleFood();
+        this.drawVisiblePlayers();
 
-        // Dessiner les joueurs
-        this.drawPlayers();
-
-        // Restaurer le contexte
         this.ctx.restore();
 
-        // Dessiner l'interface
         this.drawUI();
-        
-        // Dessiner la mini-carte
         this.drawMinimap();
     }
 
@@ -366,17 +439,18 @@ class SlitherGame {
         const startX = Math.floor(this.camera.x / gridSize) * gridSize;
         const startY = Math.floor(this.camera.y / gridSize) * gridSize;
         
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'; // Plus transparent
         this.ctx.lineWidth = 1;
         
-        for (let x = startX; x < this.camera.x + this.canvas.width + gridSize; x += gridSize) {
+        // Dessiner moins de lignes
+        for (let x = startX; x < this.camera.x + this.canvas.width + gridSize; x += gridSize * 2) {
             this.ctx.beginPath();
             this.ctx.moveTo(x - this.camera.x, 0);
             this.ctx.lineTo(x - this.camera.x, this.canvas.height);
             this.ctx.stroke();
         }
         
-        for (let y = startY; y < this.camera.y + this.canvas.height + gridSize; y += gridSize) {
+        for (let y = startY; y < this.camera.y + this.canvas.height + gridSize; y += gridSize * 2) {
             this.ctx.beginPath();
             this.ctx.moveTo(0, y - this.camera.y);
             this.ctx.lineTo(this.canvas.width, y - this.camera.y);
@@ -384,85 +458,93 @@ class SlitherGame {
         }
     }
 
-    drawFood() {
-        for (const food of this.food) {
-            // Culling - ne dessiner que la nourriture visible
-            if (food.x < this.camera.x - 50 || food.x > this.camera.x + this.canvas.width + 50 ||
-                food.y < this.camera.y - 50 || food.y > this.camera.y + this.canvas.height + 50) {
-                continue;
-            }
+    drawVisibleFood() {
+        const margin = 50;
+        const visibleFood = this.food.filter(food => 
+            food.x > this.camera.x - margin &&
+            food.x < this.camera.x + this.canvas.width + margin &&
+            food.y > this.camera.y - margin &&
+            food.y < this.camera.y + this.canvas.height + margin
+        );
 
+        for (const food of visibleFood) {
             this.ctx.fillStyle = food.color;
             this.ctx.beginPath();
             this.ctx.arc(food.x, food.y, food.size, 0, Math.PI * 2);
             this.ctx.fill();
             
-            // Effet de brillance
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-            this.ctx.beginPath();
-            this.ctx.arc(food.x - food.size * 0.3, food.y - food.size * 0.3, food.size * 0.4, 0, Math.PI * 2);
-            this.ctx.fill();
-
-            // Particules de boost plus visibles
+            // Effet de brillance simplifié
             if (food.value > 1) {
-                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-                this.ctx.lineWidth = 2;
+                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                this.ctx.lineWidth = 1;
                 this.ctx.stroke();
             }
         }
     }
 
-    drawPlayers() {
+    drawVisiblePlayers() {
+        const margin = 100;
+        const visiblePlayers = {};
+        
         for (const playerId in this.players) {
             const player = this.players[playerId];
+            if (player.x > this.camera.x - margin &&
+                player.x < this.camera.x + this.canvas.width + margin &&
+                player.y > this.camera.y - margin &&
+                player.y < this.camera.y + this.canvas.height + margin) {
+                visiblePlayers[playerId] = player;
+            }
+        }
+
+        for (const playerId in visiblePlayers) {
+            const player = visiblePlayers[playerId];
             this.drawPlayer(player, playerId === this.playerId);
         }
     }
 
     drawPlayer(player, isCurrentPlayer) {
-        // Effet de boost
-        if (player.boosting) {
+        if (player.boosting && isCurrentPlayer) {
             this.ctx.save();
             this.ctx.shadowColor = player.color;
-            this.ctx.shadowBlur = 20;
+            this.ctx.shadowBlur = 15;
         }
 
-        // Dessiner les segments du corps
-        for (let i = player.segments.length - 1; i >= 0; i--) {
+        // Limiter les segments affichés pour optimiser
+        const segmentsToRender = Math.min(player.segments.length, 20);
+        
+        for (let i = segmentsToRender - 1; i >= 0; i--) {
             const segment = player.segments[i];
             const alpha = isCurrentPlayer ? 0.9 : 0.7;
             
-            // Couleur du segment avec dégradé
             const hsl = Utils.hexToHsl(player.color);
-            const lightness = Math.max(20, hsl[2] - i * 2);
+            const lightness = Math.max(20, hsl[2] - i * 1.5);
             
             this.ctx.fillStyle = `hsla(${hsl[0]}, ${hsl[1]}%, ${lightness}%, ${alpha})`;
             this.ctx.beginPath();
             this.ctx.arc(segment.x, segment.y, segment.size, 0, Math.PI * 2);
             this.ctx.fill();
             
-            // Contour
-            this.ctx.strokeStyle = isCurrentPlayer ? '#ffffff' : 'rgba(255, 255, 255, 0.3)';
-            this.ctx.lineWidth = isCurrentPlayer ? 2 : 1;
-            this.ctx.stroke();
+            // Contour simplifié
+            if (i === 0 || i % 3 === 0) { // Contour seulement sur certains segments
+                this.ctx.strokeStyle = isCurrentPlayer ? '#ffffff' : 'rgba(255, 255, 255, 0.3)';
+                this.ctx.lineWidth = isCurrentPlayer ? 2 : 1;
+                this.ctx.stroke();
+            }
         }
 
-        // Dessiner la tête (premier segment)
         if (player.segments.length > 0) {
             const head = player.segments[0];
             
-            // Tête principale
             this.ctx.fillStyle = player.color;
             this.ctx.beginPath();
             this.ctx.arc(head.x, head.y, head.size + 2, 0, Math.PI * 2);
             this.ctx.fill();
             
-            // Contour de la tête
             this.ctx.strokeStyle = isCurrentPlayer ? '#ffffff' : 'rgba(255, 255, 255, 0.5)';
             this.ctx.lineWidth = isCurrentPlayer ? 3 : 2;
             this.ctx.stroke();
             
-            // Yeux
+            // Yeux simplifiés
             const eyeDistance = head.size * 0.6;
             const eyeSize = head.size * 0.2;
             
@@ -477,7 +559,6 @@ class SlitherGame {
             this.ctx.arc(rightEyeX, rightEyeY, eyeSize, 0, Math.PI * 2);
             this.ctx.fill();
             
-            // Pupilles
             this.ctx.fillStyle = '#000000';
             this.ctx.beginPath();
             this.ctx.arc(leftEyeX + Math.cos(player.angle) * eyeSize * 0.5, 
@@ -487,14 +568,13 @@ class SlitherGame {
             this.ctx.fill();
         }
 
-        if (player.boosting) {
+        if (player.boosting && isCurrentPlayer) {
             this.ctx.restore();
         }
 
-        // Nom du joueur avec indicateur bot
         if (!isCurrentPlayer) {
             this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = 'bold 14px Arial';
+            this.ctx.font = 'bold 12px Arial'; // Police plus petite
             this.ctx.textAlign = 'center';
             
             let displayName = player.name;
@@ -502,7 +582,7 @@ class SlitherGame {
                 displayName += ' 🤖';
             }
             
-            this.ctx.fillText(displayName, player.x, player.y - player.size - 15);
+            this.ctx.fillText(displayName, player.x, player.y - player.size - 12);
         }
     }
 
@@ -510,7 +590,6 @@ class SlitherGame {
         const player = this.players[this.playerId];
         if (!player) return;
 
-        // Mettre à jour le score
         document.getElementById('currentScore').textContent = Utils.formatNumber(player.score);
         document.getElementById('currentLength').textContent = player.segments.length;
     }
@@ -519,47 +598,38 @@ class SlitherGame {
         const minimapSize = 150;
         const worldScale = minimapSize / this.worldSize;
         
-        // Effacer la mini-carte
         this.minimapCtx.fillStyle = '#0a0a0a';
         this.minimapCtx.fillRect(0, 0, minimapSize, minimapSize);
         
-        // Dessiner les joueurs sur la mini-carte
-        for (const playerId in this.players) {
-            const player = this.players[playerId];
+        // Dessiner seulement les joueurs proches pour optimiser
+        const playerList = Object.values(this.players).slice(0, 15); // Limiter à 15 joueurs
+        
+        for (const player of playerList) {
             const x = player.x * worldScale;
             const y = player.y * worldScale;
             
-            // Différencier les bots
-            if (playerId === this.playerId) {
+            if (player.id === this.playerId) {
                 this.minimapCtx.fillStyle = '#ffffff';
-            } else if (playerId.startsWith('bot_')) {
+            } else if (player.id && player.id.startsWith('bot_')) {
                 this.minimapCtx.fillStyle = '#888888';
             } else {
                 this.minimapCtx.fillStyle = player.color;
             }
             
             this.minimapCtx.beginPath();
-            this.minimapCtx.arc(x, y, playerId === this.playerId ? 3 : 2, 0, Math.PI * 2);
+            this.minimapCtx.arc(x, y, player.id === this.playerId ? 3 : 2, 0, Math.PI * 2);
             this.minimapCtx.fill();
-
-            // Effet de boost sur la minimap
-            if (player.boosting) {
-                this.minimapCtx.strokeStyle = '#ffff00';
-                this.minimapCtx.lineWidth = 1;
-                this.minimapCtx.stroke();
-            }
         }
         
-        // Dessiner les limites du monde
         this.minimapCtx.strokeStyle = '#ffffff';
         this.minimapCtx.lineWidth = 1;
         this.minimapCtx.strokeRect(0, 0, minimapSize, minimapSize);
     }
 
-        updateLeaderboard() {
+    updateLeaderboard() {
         const playerList = Object.values(this.players)
             .sort((a, b) => b.score - a.score)
-            .slice(0, 10);
+            .slice(0, 8); // Réduire à 8 pour optimiser
         
         const leaderboardHTML = playerList.map((player, index) => {
             const isCurrentPlayer = player.id === this.playerId;
@@ -586,7 +656,6 @@ class SlitherGame {
         
         player.score = newScore;
         
-        // Vérifier nouveau record
         if (newScore > this.bestScore) {
             this.bestScore = newScore;
             document.getElementById('bestScore').textContent = Utils.formatNumber(this.bestScore);
@@ -595,17 +664,13 @@ class SlitherGame {
 
     showStatsScreen(stats) {
         this.gameRunning = false;
-        
-        // Remettre le curseur normal
         this.canvas.style.cursor = 'default';
         
-        // Remplir les statistiques de la partie
         document.getElementById('statFinalScore').textContent = Utils.formatNumber(stats.finalScore);
         document.getElementById('statFinalLength').textContent = stats.finalLength;
         document.getElementById('statKills').textContent = stats.kills;
         document.getElementById('statGameTime').textContent = this.formatTime(stats.gameTime);
         
-        // Remplir les statistiques globales
         document.getElementById('statBestScore').textContent = Utils.formatNumber(stats.bestScore);
         document.getElementById('statGamesPlayed').textContent = stats.gamesPlayed;
         document.getElementById('statTotalScore').textContent = Utils.formatNumber(stats.totalScore);
@@ -613,12 +678,10 @@ class SlitherGame {
         document.getElementById('statTotalDeaths').textContent = stats.totalDeaths;
         document.getElementById('statTotalTime').textContent = this.formatTime(stats.totalTimePlayed, true);
         
-        // Afficher le banner de nouveau record si applicable
         if (stats.newRecord) {
             document.getElementById('newRecordBanner').classList.remove('hidden');
         }
         
-        // Afficher l'écran de statistiques
         document.getElementById('statsScreen').classList.remove('hidden');
     }
 
@@ -654,10 +717,7 @@ class SlitherGame {
         this.kills = 0;
         this.gameStartTime = Date.now();
         
-        // Remettre le curseur de jeu
         this.canvas.style.cursor = 'crosshair';
-        
-        // Réinitialiser les compteurs
         document.getElementById('currentKills').textContent = '0';
         
         this.socket.emit('joinGame', {
@@ -688,11 +748,9 @@ class SlitherGame {
     }
 }
 
-// Vérifier l'authentification
 const token = localStorage.getItem('authToken');
 if (!token) {
     window.location.href = '/';
 } else {
-    // Initialiser le jeu
     new SlitherGame();
 }
