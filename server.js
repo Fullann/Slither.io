@@ -9,30 +9,7 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-    transports: ['polling'],
-    allowUpgrades: false,
-    
-    // Désactiver toute compression
-    compression: false,
-    httpCompression: false,
-    perMessageDeflate: false,
-    
-    // Timeouts adaptés à o2switch
-    pingTimeout: 120000,
-    pingInterval: 60000,
-    connectTimeout: 60000,
-    
-    // CORS pour o2switch
-    cors: {
-        origin: "https://web.fullann.ch",
-        methods: ["GET", "POST"],
-        credentials: true
-    },
-    
-    // Limiter la taille des messages
-    maxHttpBufferSize: 500000
-});
+const io = socketIo(server);
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = 'your-secret-key-change-in-production';
