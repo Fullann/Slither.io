@@ -1,374 +1,342 @@
+// server.js
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// Servir les fichiers statiques
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = 'your-secret-key-change-in-production';
+
+// Middleware
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Configuration du jeu
-const GAME_CONFIG = {
-    WORLD_WIDTH: 2000,
-    WORLD_HEIGHT: 2000,
-    FOOD_COUNT: 200,
-    BOT_COUNT: 10,
-    SNAKE_SPEED: 2,
-    BOOST_SPEED: 4,
-    BOOST_DECAY: 0.02,
-    BOOST_COOLDOWN: 30,
-    FOOD_SIZE: 8,
-    INITIAL_SNAKE_SIZE: 3,
-    SEGMENT_DISTANCE: 12
-};
+// Base de données SQLite
+const db = new sqlite3.Database('game.db');
 
-// État du jeu
+// Initialiser la base de données
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        best_score INTEGER DEFAULT 0,
+        games_played INTEGER DEFAULT 0,
+        total_score INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+});
+
+// Variables de jeu
+let players = {};
+let food = [];
 let gameState = {
-    players: new Map(),
-    bots: new Map(),
-    food: new Map(),
-    leaderboard: []
+    players: {},
+    food: []
 };
 
-// Générer de la nourriture aléatoire
+// Générer de la nourriture
 function generateFood() {
-    for (let i = 0; i < GAME_CONFIG.FOOD_COUNT; i++) {
-        const id = `food_${i}`;
-        gameState.food.set(id, {
-            id,
-            x: Math.random() * GAME_CONFIG.WORLD_WIDTH,
-            y: Math.random() * GAME_CONFIG.WORLD_HEIGHT,
-            color: `hsl(${Math.random() * 360}, 70%, 60%)`
+    for (let i = 0; i < 1000; i++) {
+        food.push({
+            id: Math.random().toString(36).substr(2, 9),
+            x: Math.random() * 4000,
+            y: Math.random() * 4000,
+            color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+            size: 3 + Math.random() * 2,
+            value: 1
         });
     }
 }
 
-// Créer un serpent
-function createSnake(id, name, isBot = false) {
-    return {
-        id,
-        name,
-        isBot,
-        x: Math.random() * GAME_CONFIG.WORLD_WIDTH,
-        y: Math.random() * GAME_CONFIG.WORLD_HEIGHT,
-        angle: Math.random() * Math.PI * 2,
-        segments: [],
-        size: GAME_CONFIG.INITIAL_SNAKE_SIZE,
-        score: 0,
-        color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-        alive: true,
-        boosting: false,
-        boostCooldown: 0,
-        length: GAME_CONFIG.INITIAL_SNAKE_SIZE
-    };
-}
-
-// Créer des bots
-function createBots() {
-    for (let i = 0; i < GAME_CONFIG.BOT_COUNT; i++) {
-        const botId = `bot_${i}`;
-        const botNames = ['SlitherBot', 'SnakeAI', 'Pythonix', 'Serpentine', 'Viperous', 'Cobrex', 'Naga', 'Anaconda'];
-        const bot = createSnake(botId, botNames[i % botNames.length], true);
-        
-        // Initialiser les segments du bot
-        for (let j = 0; j < GAME_CONFIG.INITIAL_SNAKE_SIZE; j++) {
-            bot.segments.push({
-                x: bot.x - j * GAME_CONFIG.SEGMENT_DISTANCE,
-                y: bot.y,
-                size: 12 - j * 0.5
-            });
-        }
-        
-        bot.length = GAME_CONFIG.INITIAL_SNAKE_SIZE;
-        
-        gameState.bots.set(botId, bot);
-    }
-}
-
-// Logique IA pour les bots
-function updateBotAI(bot) {
-    if (!bot.alive) return;
-
-    // Trouver la nourriture la plus proche
-    let closestFood = null;
-    let closestDistance = Infinity;
+// Routes d'authentification
+app.post('/api/register', async (req, res) => {
+    const { username, password, email } = req.body;
     
-    gameState.food.forEach(food => {
-        const distance = Math.sqrt(
-            Math.pow(food.x - bot.x, 2) + Math.pow(food.y - bot.y, 2)
-        );
-        if (distance < closestDistance) {
-            closestDistance = distance;
-            closestFood = food;
-        }
-    });
-
-    // Se diriger vers la nourriture
-    if (closestFood) {
-        const targetAngle = Math.atan2(closestFood.y - bot.y, closestFood.x - bot.x);
-        bot.angle = targetAngle;
+    if (!username || !password || !email) {
+        return res.status(400).json({ error: 'Tous les champs sont requis' });
     }
 
-    // Éviter les bords
-    const margin = 50;
-    if (bot.x < margin) bot.angle = 0;
-    if (bot.x > GAME_CONFIG.WORLD_WIDTH - margin) bot.angle = Math.PI;
-    if (bot.y < margin) bot.angle = Math.PI / 2;
-    if (bot.y > GAME_CONFIG.WORLD_HEIGHT - margin) bot.angle = -Math.PI / 2;
-
-    // Ajouter un peu d'aléatoire
-    if (Math.random() < 0.1) {
-        bot.angle += (Math.random() - 0.5) * 0.3;
-    }
-}
-
-// Mettre à jour la position du serpent
-function updateSnakePosition(snake) {
-    if (!snake.alive) return;
-
-    // Gestion du boost et cooldown
-    if (snake.boostCooldown > 0) {
-        snake.boostCooldown--;
+    if (password.length < 6) {
+        return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères' });
     }
 
-    // Calculer la vitesse actuelle
-    let currentSpeed = GAME_CONFIG.SNAKE_SPEED;
-    if (snake.boosting && snake.length > 5) {
-        currentSpeed = GAME_CONFIG.BOOST_SPEED;
-        // Le boost consomme de la longueur (perd un segment tous les 10 frames)
-        if (Math.random() < 0.1) {
-            snake.length = Math.max(3, snake.length - 0.5);
-        }
-    }
-
-    // Sauvegarder l'ancienne position
-    const oldX = snake.x;
-    const oldY = snake.y;
-
-    // Calculer la nouvelle position
-    snake.x += Math.cos(snake.angle) * currentSpeed;
-    snake.y += Math.sin(snake.angle) * currentSpeed;
-
-    // Téléportation aux bords
-    if (snake.x < 0) snake.x = GAME_CONFIG.WORLD_WIDTH;
-    if (snake.x > GAME_CONFIG.WORLD_WIDTH) snake.x = 0;
-    if (snake.y < 0) snake.y = GAME_CONFIG.WORLD_HEIGHT;
-    if (snake.y > GAME_CONFIG.WORLD_HEIGHT) snake.y = 0;
-
-    // Ajouter un nouveau segment à la tête
-    snake.segments.unshift({
-        x: oldX,
-        y: oldY,
-        size: 12
-    });
-
-    // Maintenir la longueur correcte des segments
-    while (snake.segments.length > Math.floor(snake.length)) {
-        snake.segments.pop();
-    }
-
-    // Ajuster la taille des segments pour un effet dégradé
-    snake.segments.forEach((segment, index) => {
-        segment.size = Math.max(6, 12 - index * 0.5);
-    });
-}
-
-// Vérifier les collisions avec la nourriture
-function checkFoodCollisions(snake) {
-    if (!snake.alive) return;
-
-    gameState.food.forEach((food, foodId) => {
-        const distance = Math.sqrt(
-            Math.pow(food.x - snake.x, 2) + Math.pow(food.y - snake.y, 2)
-        );
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
         
-        if (distance < 15) {
-            // Manger la nourriture - augmente la longueur réelle
-            snake.length += 2; // Augmente la longueur de 2 segments par nourriture
-            snake.score += 10;
-            gameState.food.delete(foodId);
-            
-            // Créer une nouvelle nourriture
-            const newFoodId = `food_${Date.now()}_${Math.random()}`;
-            gameState.food.set(newFoodId, {
-                id: newFoodId,
-                x: Math.random() * GAME_CONFIG.WORLD_WIDTH,
-                y: Math.random() * GAME_CONFIG.WORLD_HEIGHT,
-                color: `hsl(${Math.random() * 360}, 70%, 60%)`
-            });
-        }
-    });
-}
-
-// Vérifier les collisions entre serpents
-function checkSnakeCollisions() {
-    const allSnakes = [...gameState.players.values(), ...gameState.bots.values()];
-    
-    allSnakes.forEach(snake1 => {
-        if (!snake1.alive) return;
-        
-        allSnakes.forEach(snake2 => {
-            if (snake1.id === snake2.id || !snake2.alive) return;
-            
-            // Vérifier collision avec les segments
-            snake2.segments.forEach(segment => {
-                const distance = Math.sqrt(
-                    Math.pow(segment.x - snake1.x, 2) + Math.pow(segment.y - snake1.y, 2)
-                );
-                
-                if (distance < 12) {
-                    snake1.alive = false;
-                    // Créer de la nourriture à partir du serpent mort
-                    for (let i = 0; i < Math.min(snake1.segments.length, 20); i++) {
-                        const foodId = `death_food_${Date.now()}_${i}`;
-                        gameState.food.set(foodId, {
-                            id: foodId,
-                            x: snake1.segments[i].x + (Math.random() - 0.5) * 40,
-                            y: snake1.segments[i].y + (Math.random() - 0.5) * 40,
-                            color: snake1.color
-                        });
+        db.run(
+            'INSERT INTO users (username, password, email) VALUES (?, ?, ?)',
+            [username, hashedPassword, email],
+            function(err) {
+                if (err) {
+                    if (err.message.includes('UNIQUE constraint failed')) {
+                        return res.status(400).json({ error: 'Nom d\'utilisateur ou email déjà utilisé' });
                     }
+                    return res.status(500).json({ error: 'Erreur lors de la création du compte' });
                 }
-            });
-        });
-    });
-}
-
-// Mettre à jour le classement
-function updateLeaderboard() {
-    const allSnakes = [...gameState.players.values(), ...gameState.bots.values()];
-    gameState.leaderboard = allSnakes
-        .filter(snake => snake.alive)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10)
-        .map(snake => ({
-            name: snake.name,
-            score: snake.score,
-            isBot: snake.isBot
-        }));
-}
-
-// Boucle de jeu principale
-function gameLoop() {
-    // Mettre à jour les bots
-    gameState.bots.forEach(bot => {
-        updateBotAI(bot);
-        updateSnakePosition(bot);
-        checkFoodCollisions(bot);
-    });
-
-    // Mettre à jour les joueurs
-    gameState.players.forEach(player => {
-        updateSnakePosition(player);
-        checkFoodCollisions(player);
-    });
-
-    // Vérifier les collisions
-    checkSnakeCollisions();
-
-    // Supprimer les serpents morts
-    gameState.players.forEach((player, id) => {
-        if (!player.alive) {
-            gameState.players.delete(id);
-        }
-    });
-
-    gameState.bots.forEach((bot, id) => {
-        if (!bot.alive) {
-            // Recréer le bot
-            const newBot = createSnake(id, bot.name, true);
-            for (let j = 0; j < GAME_CONFIG.INITIAL_SNAKE_SIZE; j++) {
-                newBot.segments.push({
-                    x: newBot.x - j * GAME_CONFIG.SEGMENT_DISTANCE,
-                    y: newBot.y,
-                    size: 12 - j * 0.5
+                
+                const token = jwt.sign({ userId: this.lastID, username }, JWT_SECRET);
+                res.json({ 
+                    token, 
+                    user: { 
+                        id: this.lastID, 
+                        username, 
+                        email,
+                        bestScore: 0,
+                        gamesPlayed: 0,
+                        totalScore: 0
+                    } 
                 });
             }
-            newBot.length = GAME_CONFIG.INITIAL_SNAKE_SIZE;
-            gameState.bots.set(id, newBot);
-        }
-    });
+        );
+    } catch (error) {
+        res.status(500).json({ error: 'Erreur serveur' });
+    }
+});
 
-    // Mettre à jour le classement
-    updateLeaderboard();
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+        return res.status(400).json({ error: 'Nom d\'utilisateur et mot de passe requis' });
+    }
 
-    // Envoyer l'état du jeu aux clients
-    io.emit('gameUpdate', {
-        players: Array.from(gameState.players.values()),
-        bots: Array.from(gameState.bots.values()),
-        food: Array.from(gameState.food.values()),
-        leaderboard: gameState.leaderboard
-    });
-}
+    db.get(
+        'SELECT * FROM users WHERE username = ?',
+        [username],
+        async (err, user) => {
+            if (err) {
+                return res.status(500).json({ error: 'Erreur serveur' });
+            }
+            
+            if (!user) {
+                return res.status(400).json({ error: 'Nom d\'utilisateur ou mot de passe incorrect' });
+            }
 
-// Gestion des connexions
-io.on('connection', (socket) => {
-    console.log('Nouveau joueur connecté:', socket.id);
+            const validPassword = await bcrypt.compare(password, user.password);
+            if (!validPassword) {
+                return res.status(400).json({ error: 'Nom d\'utilisateur ou mot de passe incorrect' });
+            }
 
-    socket.on('joinGame', (playerName) => {
-        const player = createSnake(socket.id, playerName || 'Joueur');
-        
-        // Initialiser les segments
-        for (let i = 0; i < GAME_CONFIG.INITIAL_SNAKE_SIZE; i++) {
-            player.segments.push({
-                x: player.x - i * GAME_CONFIG.SEGMENT_DISTANCE,
-                y: player.y,
-                size: 12 - i * 0.5
+            const token = jwt.sign({ userId: user.id, username: user.username }, JWT_SECRET);
+            res.json({ 
+                token, 
+                user: { 
+                    id: user.id, 
+                    username: user.username, 
+                    email: user.email,
+                    bestScore: user.best_score,
+                    gamesPlayed: user.games_played,
+                    totalScore: user.total_score
+                } 
             });
         }
-        
-        player.length = GAME_CONFIG.INITIAL_SNAKE_SIZE;
-        
-        gameState.players.set(socket.id, player);
-        
-        socket.emit('gameJoined', {
-            playerId: socket.id,
-            worldSize: {
-                width: GAME_CONFIG.WORLD_WIDTH,
-                height: GAME_CONFIG.WORLD_HEIGHT
+    );
+});
+
+// Middleware d'authentification pour Socket.io
+io.use((socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+        return next(new Error('Token manquant'));
+    }
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        socket.userId = decoded.userId;
+        socket.username = decoded.username;
+        next();
+    } catch (err) {
+        next(new Error('Token invalide'));
+    }
+});
+
+// Initialiser la nourriture
+generateFood();
+
+// Gestion des connexions Socket.io
+io.on('connection', (socket) => {
+    console.log('Nouveau joueur connecté:', socket.username);
+
+    // Rejoindre le jeu
+    socket.on('joinGame', (playerData) => {
+        players[socket.id] = {
+            id: socket.id,
+            userId: socket.userId,
+            name: socket.username,
+            x: Math.random() * 2000 + 1000,
+            y: Math.random() * 2000 + 1000,
+            segments: [],
+            angle: 0,
+            speed: 3,
+            size: 10,
+            score: 0,
+            color: playerData.color || `hsl(${Math.random() * 360}, 70%, 60%)`,
+            boosting: false
+        };
+
+        // Initialiser les segments du serpent
+        for (let i = 0; i < 5; i++) {
+            players[socket.id].segments.push({
+                x: players[socket.id].x - i * 8,
+                y: players[socket.id].y,
+                size: players[socket.id].size - i * 0.5
+            });
+        }
+
+        // Incrémenter les parties jouées
+        db.run('UPDATE users SET games_played = games_played + 1 WHERE id = ?', [socket.userId]);
+
+        // Envoyer l'état initial au joueur
+        socket.emit('gameState', {
+            players: players,
+            food: food,
+            playerId: socket.id
+        });
+
+        // Informer les autres joueurs
+        socket.broadcast.emit('playerJoined', players[socket.id]);
+    });
+
+    // Mise à jour de la position du joueur
+    socket.on('updatePosition', (data) => {
+        if (players[socket.id]) {
+            const player = players[socket.id];
+            player.x = data.x;
+            player.y = data.y;
+            player.angle = data.angle;
+            player.segments = data.segments;
+            player.speed = data.speed;
+            player.boosting = data.boosting;
+
+            // Si le joueur boost, déposer des particules
+            if (data.boosting && player.segments.length > 5 && Math.random() < 0.3) {
+                // Retirer un segment et créer une particule
+                const removedSegment = player.segments.pop();
+                player.score = Math.max(0, player.score - 1);
+                
+                // Créer une particule de boost
+                const boostParticle = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    x: removedSegment.x + (Math.random() - 0.5) * 20,
+                    y: removedSegment.y + (Math.random() - 0.5) * 20,
+                    color: player.color,
+                    size: 4,
+                    value: 2
+                };
+                
+                food.push(boostParticle);
+                
+                // Informer tous les joueurs de la nouvelle particule
+                io.emit('boostParticle', boostParticle);
             }
+
+            // Diffuser la position aux autres joueurs
+            socket.broadcast.emit('playerMoved', {
+                id: socket.id,
+                x: data.x,
+                y: data.y,
+                angle: data.angle,
+                segments: data.segments,
+                speed: data.speed,
+                boosting: data.boosting
+            });
+        }
+    });
+
+    // Manger de la nourriture
+    socket.on('eatFood', (foodData) => {
+        const foodItem = food.find(f => f.id === foodData.foodId);
+        if (!foodItem) return;
+
+        food = food.filter(f => f.id !== foodData.foodId);
+        
+        if (players[socket.id]) {
+            const scoreGain = foodItem.value || 1;
+            players[socket.id].score += scoreGain;
+            
+            // Mettre à jour le score total dans la base de données
+            db.run('UPDATE users SET total_score = total_score + ? WHERE id = ?', [scoreGain, socket.userId]);
+        }
+
+        // Générer nouvelle nourriture normale
+        const newFood = {
+            id: Math.random().toString(36).substr(2, 9),
+            x: Math.random() * 4000,
+            y: Math.random() * 4000,
+            color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+            size: 3 + Math.random() * 2,
+            value: 1
+        };
+        
+        food.push(newFood);
+
+        // Informer tous les joueurs
+        io.emit('foodEaten', { 
+            foodId: foodData.foodId, 
+            newFood: newFood, 
+            playerId: socket.id,
+            newScore: players[socket.id].score
         });
     });
 
-    socket.on('updateDirection', (angle) => {
-        const player = gameState.players.get(socket.id);
-        if (player && player.alive) {
-            player.angle = angle;
+    // Collision avec un autre joueur
+    socket.on('playerDied', (data) => {
+        if (players[socket.id]) {
+            const deadPlayer = players[socket.id];
+            
+            // Mettre à jour le meilleur score si nécessaire
+            db.get('SELECT best_score FROM users WHERE id = ?', [socket.userId], (err, row) => {
+                if (!err && row && deadPlayer.score > row.best_score) {
+                    db.run('UPDATE users SET best_score = ? WHERE id = ?', [deadPlayer.score, socket.userId]);
+                }
+            });
+            
+            // Convertir les segments en nourriture
+            deadPlayer.segments.forEach((segment, index) => {
+                if (index % 2 === 0) { // Seulement certains segments
+                    food.push({
+                        id: Math.random().toString(36).substr(2, 9),
+                        x: segment.x + (Math.random() - 0.5) * 20,
+                        y: segment.y + (Math.random() - 0.5) * 20,
+                        color: deadPlayer.color,
+                        size: 4 + Math.random() * 3,
+                        value: 2
+                    });
+                }
+            });
+
+            delete players[socket.id];
+            
+            // Informer tous les joueurs
+            io.emit('playerDied', { playerId: socket.id, newFood: food });
         }
     });
 
-    socket.on('startBoost', () => {
-        const player = gameState.players.get(socket.id);
-        if (player && player.alive && player.boostCooldown <= 0 && player.length > 5) {
-            player.boosting = true;
-        }
-    });
-
-    socket.on('stopBoost', () => {
-        const player = gameState.players.get(socket.id);
-        if (player && player.alive) {
-            player.boosting = false;
-            player.boostCooldown = GAME_CONFIG.BOOST_COOLDOWN;
-        }
-    });
-
+    // Déconnexion
     socket.on('disconnect', () => {
-        gameState.players.delete(socket.id);
-        console.log('Joueur déconnecté:', socket.id);
+        console.log('Joueur déconnecté:', socket.username);
+        delete players[socket.id];
+        socket.broadcast.emit('playerLeft', socket.id);
     });
 });
 
-// Initialiser le jeu
-generateFood();
-createBots();
+// Envoyer l'état du jeu périodiquement
+setInterval(() => {
+    io.emit('gameUpdate', {
+        players: players,
+        food: food
+    });
+}, 1000 / 30); // 30 FPS
 
-// Démarrer la boucle de jeu (60 FPS)
-setInterval(gameLoop, 1000 / 60);
-
-const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Serveur démarré sur le port ${PORT}`);
 });
