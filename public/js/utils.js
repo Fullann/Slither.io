@@ -53,4 +53,46 @@ class Utils {
 
         return [h * 360, s * 100, l * 100];
     }
+
+    static formatTime(seconds) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        
+        if (hours > 0) {
+            return `${hours}h ${minutes}m ${secs}s`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${secs}s`;
+        } else {
+            return `${secs}s`;
+        }
+    }
+
+    static getRandomColor() {
+        const colors = [
+            '#ef4444', '#3b82f6', '#10b981', '#f59e0b', 
+            '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16',
+            '#f97316', '#6366f1', '#14b8a6', '#eab308'
+        ];
+        return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    static isBot(playerId) {
+        return playerId && playerId.startsWith('bot_');
+    }
+
+    static calculateScore(segments) {
+        return Math.max(0, (segments.length - 5) * 5);
+    }
+
+    static generateBotName() {
+        const adjectives = ['Swift', 'Mighty', 'Clever', 'Fierce', 'Silent', 'Golden', 'Shadow', 'Lightning'];
+        const nouns = ['Viper', 'Cobra', 'Python', 'Serpent', 'Snake', 'Adder', 'Mamba', 'Boa'];
+        
+        const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+        const noun = nouns[Math.floor(Math.random() * nouns.length)];
+        const number = Math.floor(Math.random() * 1000);
+        
+        return `${adj}${noun}${number}`;
+    }
 }

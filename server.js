@@ -31,17 +31,303 @@ db.serialize(() => {
         best_score INTEGER DEFAULT 0,
         games_played INTEGER DEFAULT 0,
         total_score INTEGER DEFAULT 0,
+        total_kills INTEGER DEFAULT 0,
+        total_deaths INTEGER DEFAULT 0,
+        total_time_played INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 });
 
 // Variables de jeu
 let players = {};
+let bots = {};
 let food = [];
 let gameState = {
     players: {},
     food: []
 };
+
+const MIN_PLAYERS = 8; // Minimum de joueurs (humains + bots)
+const BOT_NAMES = [
+    'Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta',
+    'Iota', 'Kappa', 'Lambda', 'Mu', 'Nu', 'Xi', 'Omicron', 'Pi',
+    'Rho', 'Sigma', 'Tau', 'Upsilon', 'Phi', 'Chi', 'Psi', 'Omega',
+    'Viper', 'Cobra', 'Python', 'Anaconda', 'Mamba', 'Boa', 'Adder'
+];
+
+// Classe Bot IA
+class Bot {
+    constructor(id, name) {
+        this.id = id;
+        this.name = name;
+        this.x = Math.random() * 2000 + 1000;
+        this.y = Math.random() * 2000 + 1000;
+        this.segments = [];
+        this.angle = Math.random() * Math.PI * 2;
+        this.speed = 3;
+        this.size = 10;
+        this.score = 0;
+        this.color = `hsl(${Math.random() * 360}, 70%, 60%)`;
+        this.boosting = false;
+        this.target = null;
+        this.lastDirectionChange = Date.now();
+        this.aggressiveness = Math.random() * 0.5 + 0.3; // 0.3 à 0.8
+        this.fearDistance = 100 + Math.random() * 100; // Distance de fuite
+        
+        // Initialiser les segments
+        for (let i = 0; i < 5; i++) {
+            this.segments.push({
+                x: this.x - i * 8,
+                y: this.y,
+                size: this.size - i * 0.5
+            });
+        }
+    }
+
+    update() {
+        // Trouver la nourriture la plus proche
+        let closestFood = null;
+        let closestFoodDistance = Infinity;
+        
+        for (const foodItem of food) {
+            const distance = this.distanceTo(foodItem.x, foodItem.y);
+            if (distance < closestFoodDistance) {
+                closestFoodDistance = distance;
+                closestFood = foodItem;
+            }
+        }
+
+        // Vérifier les dangers (autres serpents)
+        let danger = null;
+        let closestDangerDistance = Infinity;
+        
+        const allPlayers = { ...players, ...bots };
+        for (const playerId in allPlayers) {
+            if (playerId === this.id) continue;
+            
+            const otherPlayer = allPlayers[playerId];
+            const distance = this.distanceTo(otherPlayer.x, otherPlayer.y);
+            
+            // Si l'autre serpent est plus gros et proche, c'est un danger
+            if (otherPlayer.segments.length > this.segments.length && distance < this.fearDistance) {
+                if (distance < closestDangerDistance) {
+                    closestDangerDistance = distance;
+                    danger = otherPlayer;
+                }
+            }
+        }
+
+        // Logique de décision
+        if (danger && closestDangerDistance < 80) {
+            // Fuir le danger
+            this.angle = this.angleTo(danger.x, danger.y) + Math.PI; // Direction opposée
+            this.boosting = Math.random() < 0.7; // 70% de chance de booster en fuyant
+        } else if (closestFood && closestFoodDistance < 150) {
+            // Aller vers la nourriture
+            this.angle = this.angleTo(closestFood.x, closestFood.y);
+            this.boosting = false;
+        } else {
+            // Mouvement aléatoire
+            if (Date.now() - this.lastDirectionChange > 2000 + Math.random() * 3000) {
+                this.angle += (Math.random() - 0.5) * 0.8;
+                this.lastDirectionChange = Date.now();
+            }
+            this.boosting = Math.random() < 0.1; // 10% de chance de booster aléatoirement
+        }
+
+        // Chercher des proies (serpents plus petits)
+        if (this.segments.length > 10 && Math.random() < this.aggressiveness) {
+            for (const playerId in allPlayers) {
+                if (playerId === this.id) continue;
+                
+                const otherPlayer = allPlayers[playerId];
+                const distance = this.distanceTo(otherPlayer.x, otherPlayer.y);
+                
+                if (otherPlayer.segments.length < this.segments.length * 0.7 && distance < 200) {
+                    this.angle = this.angleTo(otherPlayer.x, otherPlayer.y);
+                    this.boosting = distance > 50;
+                    break;
+                }
+            }
+        }
+
+        // Vitesse
+        this.speed = this.boosting ? 6 : 3;
+
+        // Déplacement
+        this.x += Math.cos(this.angle) * this.speed;
+        this.y += Math.sin(this.angle) * this.speed;
+
+        // Limites du monde
+        this.x = Math.max(50, Math.min(this.x, 3950));
+        this.y = Math.max(50, Math.min(this.y, 3950));
+
+        // Éviter les bords
+        if (this.x < 200) this.angle = Math.abs(this.angle);
+        if (this.x > 3800) this.angle = Math.PI - Math.abs(this.angle);
+        if (this.y < 200) this.angle = Math.abs(this.angle) * (this.angle > 0 ? 1 : -1);
+        if (this.y > 3800) this.angle = -Math.abs(this.angle) * (this.angle > 0 ? 1 : -1);
+
+        // Mise à jour des segments
+        this.updateSegments();
+
+        // Boost et perte de segments
+        if (this.boosting && this.segments.length > 5 && Math.random() < 0.3) {
+            const removedSegment = this.segments.pop();
+            this.score = Math.max(0, this.score - 1);
+            
+            // Créer une particule de boost
+            food.push({
+                id: Math.random().toString(36).substr(2, 9),
+                x: removedSegment.x + (Math.random() - 0.5) * 20,
+                y: removedSegment.y + (Math.random() - 0.5) * 20,
+                color: this.color,
+                size: 4,
+                value: 2
+            });
+        }
+    }
+
+    updateSegments() {
+        const segmentDistance = 8;
+        
+        this.segments.unshift({
+            x: this.x,
+            y: this.y,
+            size: this.size
+        });
+
+        for (let i = 1; i < this.segments.length; i++) {
+            const prevSegment = this.segments[i - 1];
+            const currentSegment = this.segments[i];
+            
+            const distance = this.distanceTo(prevSegment.x, prevSegment.y, currentSegment.x, currentSegment.y);
+            
+            if (distance > segmentDistance) {
+                const angle = this.angleTo(currentSegment.x, currentSegment.y, prevSegment.x, prevSegment.y);
+                currentSegment.x = prevSegment.x - Math.cos(angle) * segmentDistance;
+                currentSegment.y = prevSegment.y - Math.sin(angle) * segmentDistance;
+            }
+        }
+
+        const targetLength = Math.max(5, Math.floor(this.score / 5) + 5);
+        while (this.segments.length > targetLength) {
+            this.segments.pop();
+        }
+    }
+
+    distanceTo(x1, y1, x2 = this.x, y2 = this.y) {
+        return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    }
+
+    angleTo(x1, y1, x2 = this.x, y2 = this.y) {
+        return Math.atan2(y1 - y2, x1 - x2);
+    }
+
+    checkFoodCollisions() {
+        for (let i = food.length - 1; i >= 0; i--) {
+            const foodItem = food[i];
+            const distance = this.distanceTo(foodItem.x, foodItem.y);
+            
+            if (distance < this.size + foodItem.size) {
+                food.splice(i, 1);
+                this.score += foodItem.value || 1;
+                
+                // Générer nouvelle nourriture
+                food.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    x: Math.random() * 4000,
+                    y: Math.random() * 4000,
+                    color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+                    size: 3 + Math.random() * 2,
+                    value: 1
+                });
+                break;
+            }
+        }
+    }
+
+    checkPlayerCollisions() {
+        const allPlayers = { ...players, ...bots };
+        for (const playerId in allPlayers) {
+            if (playerId === this.id) continue;
+            
+            const otherPlayer = allPlayers[playerId];
+            
+            for (const segment of otherPlayer.segments) {
+                const distance = this.distanceTo(segment.x, segment.y);
+                
+                if (distance < this.size + segment.size - 5) {
+                    return true; // Collision détectée
+                }
+            }
+        }
+        return false;
+    }
+
+    die() {
+        // Convertir les segments en nourriture
+        this.segments.forEach((segment, index) => {
+            if (index % 2 === 0) {
+                food.push({
+                    id: Math.random().toString(36).substr(2, 9),
+                    x: segment.x + (Math.random() - 0.5) * 20,
+                    y: segment.y + (Math.random() - 0.5) * 20,
+                    color: this.color,
+                    size: 4 + Math.random() * 3,
+                    value: 2
+                });
+            }
+        });
+    }
+}
+
+// Gestion des bots
+function manageBots() {
+    const totalPlayers = Object.keys(players).length + Object.keys(bots).length;
+    
+    // Ajouter des bots si nécessaire
+    while (totalPlayers + Object.keys(bots).length < MIN_PLAYERS) {
+        const botId = 'bot_' + Math.random().toString(36).substr(2, 9);
+        const botName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)] + '_' + Math.floor(Math.random() * 1000);
+        bots[botId] = new Bot(botId, botName);
+    }
+    
+    // Supprimer des bots si trop de joueurs humains
+    const humanPlayers = Object.keys(players).length;
+    const botCount = Object.keys(bots).length;
+    
+    if (humanPlayers > MIN_PLAYERS / 2 && botCount > 2) {
+        const botsToRemove = Math.min(botCount - 2, humanPlayers - MIN_PLAYERS / 2);
+        const botIds = Object.keys(bots);
+        
+        for (let i = 0; i < botsToRemove; i++) {
+            const botId = botIds[i];
+            delete bots[botId];
+            io.emit('playerLeft', botId);
+        }
+    }
+}
+
+// Mise à jour des bots
+function updateBots() {
+    for (const botId in bots) {
+        const bot = bots[botId];
+        bot.update();
+        bot.checkFoodCollisions();
+        
+        if (bot.checkPlayerCollisions()) {
+            bot.die();
+            delete bots[botId];
+            io.emit('playerDied', { playerId: botId, newFood: food });
+            
+            // Créer un nouveau bot après un délai
+            setTimeout(() => {
+                manageBots();
+            }, 3000);
+        }
+    }
+}
 
 // Générer de la nourriture
 function generateFood() {
@@ -57,7 +343,7 @@ function generateFood() {
     }
 }
 
-// Routes d'authentification
+// Routes d'authentification (inchangées)
 app.post('/api/register', async (req, res) => {
     const { username, password, email } = req.body;
     
@@ -92,7 +378,10 @@ app.post('/api/register', async (req, res) => {
                         email,
                         bestScore: 0,
                         gamesPlayed: 0,
-                        totalScore: 0
+                        totalScore: 0,
+                        totalKills: 0,
+                        totalDeaths: 0,
+                        totalTimePlayed: 0
                     } 
                 });
             }
@@ -135,7 +424,10 @@ app.post('/api/login', async (req, res) => {
                     email: user.email,
                     bestScore: user.best_score,
                     gamesPlayed: user.games_played,
-                    totalScore: user.total_score
+                    totalScore: user.total_score,
+                    totalKills: user.total_kills || 0,
+                    totalDeaths: user.total_deaths || 0,
+                    totalTimePlayed: user.total_time_played || 0
                 } 
             });
         }
@@ -159,12 +451,14 @@ io.use((socket, next) => {
     }
 });
 
-// Initialiser la nourriture
+// Initialiser la nourriture et les bots
 generateFood();
+manageBots();
 
 // Gestion des connexions Socket.io
 io.on('connection', (socket) => {
     console.log('Nouveau joueur connecté:', socket.username);
+    socket.gameStartTime = Date.now();
 
     // Rejoindre le jeu
     socket.on('joinGame', (playerData) => {
@@ -180,7 +474,8 @@ io.on('connection', (socket) => {
             size: 10,
             score: 0,
             color: playerData.color || `hsl(${Math.random() * 360}, 70%, 60%)`,
-            boosting: false
+            boosting: false,
+            kills: 0
         };
 
         // Initialiser les segments du serpent
@@ -195,15 +490,19 @@ io.on('connection', (socket) => {
         // Incrémenter les parties jouées
         db.run('UPDATE users SET games_played = games_played + 1 WHERE id = ?', [socket.userId]);
 
-        // Envoyer l'état initial au joueur
+        // Envoyer l'état initial au joueur (inclure les bots)
+        const allPlayers = { ...players, ...bots };
         socket.emit('gameState', {
-            players: players,
+            players: allPlayers,
             food: food,
             playerId: socket.id
         });
 
         // Informer les autres joueurs
         socket.broadcast.emit('playerJoined', players[socket.id]);
+        
+        // Gérer les bots
+        manageBots();
     });
 
     // Mise à jour de la position du joueur
@@ -219,11 +518,9 @@ io.on('connection', (socket) => {
 
             // Si le joueur boost, déposer des particules
             if (data.boosting && player.segments.length > 5 && Math.random() < 0.3) {
-                // Retirer un segment et créer une particule
                 const removedSegment = player.segments.pop();
                 player.score = Math.max(0, player.score - 1);
                 
-                // Créer une particule de boost
                 const boostParticle = {
                     id: Math.random().toString(36).substr(2, 9),
                     x: removedSegment.x + (Math.random() - 0.5) * 20,
@@ -234,8 +531,6 @@ io.on('connection', (socket) => {
                 };
                 
                 food.push(boostParticle);
-                
-                // Informer tous les joueurs de la nouvelle particule
                 io.emit('boostParticle', boostParticle);
             }
 
@@ -263,11 +558,9 @@ io.on('connection', (socket) => {
             const scoreGain = foodItem.value || 1;
             players[socket.id].score += scoreGain;
             
-            // Mettre à jour le score total dans la base de données
             db.run('UPDATE users SET total_score = total_score + ? WHERE id = ?', [scoreGain, socket.userId]);
         }
 
-        // Générer nouvelle nourriture normale
         const newFood = {
             id: Math.random().toString(36).substr(2, 9),
             x: Math.random() * 4000,
@@ -279,7 +572,6 @@ io.on('connection', (socket) => {
         
         food.push(newFood);
 
-        // Informer tous les joueurs
         io.emit('foodEaten', { 
             foodId: foodData.foodId, 
             newFood: newFood, 
@@ -292,17 +584,26 @@ io.on('connection', (socket) => {
     socket.on('playerDied', (data) => {
         if (players[socket.id]) {
             const deadPlayer = players[socket.id];
+            const gameTime = Math.floor((Date.now() - socket.gameStartTime) / 1000);
             
-            // Mettre à jour le meilleur score si nécessaire
+            // Mettre à jour les statistiques
             db.get('SELECT best_score FROM users WHERE id = ?', [socket.userId], (err, row) => {
                 if (!err && row && deadPlayer.score > row.best_score) {
                     db.run('UPDATE users SET best_score = ? WHERE id = ?', [deadPlayer.score, socket.userId]);
                 }
             });
             
+            db.run(`UPDATE users SET 
+                total_deaths = total_deaths + 1,
+                total_time_played = total_time_played + ?,
+                total_kills = total_kills + ?
+                WHERE id = ?`, 
+                [gameTime, deadPlayer.kills || 0, socket.userId]
+            );
+            
             // Convertir les segments en nourriture
             deadPlayer.segments.forEach((segment, index) => {
-                if (index % 2 === 0) { // Seulement certains segments
+                if (index % 2 === 0) {
                     food.push({
                         id: Math.random().toString(36).substr(2, 9),
                         x: segment.x + (Math.random() - 0.5) * 20,
@@ -314,9 +615,28 @@ io.on('connection', (socket) => {
                 }
             });
 
+            // Envoyer les stats finales
+            db.get(`SELECT best_score, games_played, total_score, total_kills, 
+                    total_deaths, total_time_played FROM users WHERE id = ?`, 
+                    [socket.userId], (err, stats) => {
+                if (!err && stats) {
+                    socket.emit('gameStats', {
+                        finalScore: deadPlayer.score,
+                        finalLength: deadPlayer.segments.length,
+                        kills: deadPlayer.kills || 0,
+                        gameTime: gameTime,
+                        bestScore: Math.max(stats.best_score, deadPlayer.score),
+                        gamesPlayed: stats.games_played,
+                        totalScore: stats.total_score,
+                        totalKills: stats.total_kills + (deadPlayer.kills || 0),
+                        totalDeaths: stats.total_deaths + 1,
+                        totalTimePlayed: stats.total_time_played + gameTime,
+                        newRecord: deadPlayer.score > stats.best_score
+                    });
+                }
+            });
+
             delete players[socket.id];
-            
-            // Informer tous les joueurs
             io.emit('playerDied', { playerId: socket.id, newFood: food });
         }
     });
@@ -324,18 +644,34 @@ io.on('connection', (socket) => {
     // Déconnexion
     socket.on('disconnect', () => {
         console.log('Joueur déconnecté:', socket.username);
+        
+        if (players[socket.id]) {
+            const gameTime = Math.floor((Date.now() - socket.gameStartTime) / 1000);
+            db.run('UPDATE users SET total_time_played = total_time_played + ? WHERE id = ?', 
+                   [gameTime, socket.userId]);
+        }
+        
         delete players[socket.id];
         socket.broadcast.emit('playerLeft', socket.id);
+        manageBots();
     });
 });
 
-// Envoyer l'état du jeu périodiquement
+// Mise à jour du jeu
 setInterval(() => {
+    updateBots();
+    
+    const allPlayers = { ...players, ...bots };
     io.emit('gameUpdate', {
-        players: players,
+        players: allPlayers,
         food: food
     });
 }, 1000 / 30); // 30 FPS
+
+// Gestion périodique des bots
+setInterval(() => {
+    manageBots();
+}, 10000); // Vérifier toutes les 10 secondes
 
 server.listen(PORT, () => {
     console.log(`Serveur démarré sur le port ${PORT}`);

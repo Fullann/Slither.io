@@ -18,6 +18,9 @@ class SlitherGame {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         
+        // Afficher le curseur
+        this.canvas.style.cursor = 'crosshair';
+        
         window.addEventListener('resize', () => {
             this.canvas.width = window.innerWidth;
             this.canvas.height = window.innerHeight;
@@ -35,6 +38,8 @@ class SlitherGame {
         this.isPaused = false;
         this.worldSize = 4000;
         this.boosting = false;
+        this.kills = 0;
+        this.gameStartTime = Date.now();
         
         // Récupérer les données utilisateur
         const userData = JSON.parse(localStorage.getItem('userData') || '{}');
@@ -45,6 +50,7 @@ class SlitherGame {
         // Afficher les informations utilisateur
         document.getElementById('playerName').textContent = this.playerName;
         document.getElementById('bestScore').textContent = Utils.formatNumber(this.bestScore);
+        document.getElementById('currentKills').textContent = '0';
     }
 
     setupEventListeners() {
@@ -69,6 +75,11 @@ class SlitherGame {
                 this.boosting = false;
                 document.getElementById('boostIndicator').classList.add('hidden');
             }
+        });
+
+        // Empêcher le menu contextuel
+        this.canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
         });
 
         // Clavier
@@ -166,14 +177,28 @@ class SlitherGame {
 
         this.socket.on('playerDied', (data) => {
             if (data.playerId === this.playerId) {
-                this.handleDeath();
+                // Ne pas afficher l'écran de mort ici, attendre les stats
             } else {
                 delete this.players[data.playerId];
                 this.food = data.newFood;
+                
+                // Incrémenter les kills si c'est nous qui avons tué
+                const player = this.players[this.playerId];
+                if (player) {
+                    this.kills++;
+                    player.kills = this.kills;
+                    document.getElementById('currentKills').textContent = this.kills;
+                }
             }
         });
 
+        this.socket.on('gameStats', (stats) => {
+            this.showStatsScreen(stats);
+        });
+
         this.socket.on('gameUpdate', (state) => {
+            // Mettre à jour avec tous les joueurs (humains + bots)
+            this.players = state.players;
             this.updateLeaderboard();
         });
     }
@@ -466,12 +491,18 @@ class SlitherGame {
             this.ctx.restore();
         }
 
-        // Nom du joueur
+        // Nom du joueur avec indicateur bot
         if (!isCurrentPlayer) {
             this.ctx.fillStyle = '#ffffff';
             this.ctx.font = 'bold 14px Arial';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText(player.name, player.x, player.y - player.size - 15);
+            
+            let displayName = player.name;
+            if (player.id && player.id.startsWith('bot_')) {
+                displayName += ' 🤖';
+            }
+            
+            this.ctx.fillText(displayName, player.x, player.y - player.size - 15);
         }
     }
 
@@ -498,7 +529,15 @@ class SlitherGame {
             const x = player.x * worldScale;
             const y = player.y * worldScale;
             
-            this.minimapCtx.fillStyle = playerId === this.playerId ? '#ffffff' : player.color;
+            // Différencier les bots
+            if (playerId === this.playerId) {
+                this.minimapCtx.fillStyle = '#ffffff';
+            } else if (playerId.startsWith('bot_')) {
+                this.minimapCtx.fillStyle = '#888888';
+            } else {
+                this.minimapCtx.fillStyle = player.color;
+            }
+            
             this.minimapCtx.beginPath();
             this.minimapCtx.arc(x, y, playerId === this.playerId ? 3 : 2, 0, Math.PI * 2);
             this.minimapCtx.fill();
@@ -517,18 +556,22 @@ class SlitherGame {
         this.minimapCtx.strokeRect(0, 0, minimapSize, minimapSize);
     }
 
-    updateLeaderboard() {
+        updateLeaderboard() {
         const playerList = Object.values(this.players)
             .sort((a, b) => b.score - a.score)
             .slice(0, 10);
         
         const leaderboardHTML = playerList.map((player, index) => {
             const isCurrentPlayer = player.id === this.playerId;
+            const isBot = player.id && player.id.startsWith('bot_');
             const medal = index < 3 ? ['🥇', '🥈', '🥉'][index] : `${index + 1}.`;
             
             return `
                 <div class="flex justify-between items-center ${isCurrentPlayer ? 'bg-yellow-500/20 rounded px-2 py-1' : ''}">
-                    <span class="text-xs">${medal} ${player.name}</span>
+                    <span class="text-xs">
+                        ${medal} ${player.name}
+                        ${isBot ? '<span class="bot-indicator">🤖</span>' : ''}
+                    </span>
                     <span class="text-xs font-bold">${Utils.formatNumber(player.score)}</span>
                 </div>
             `;
@@ -550,27 +593,72 @@ class SlitherGame {
         }
     }
 
-    handleDeath() {
+    showStatsScreen(stats) {
         this.gameRunning = false;
-        const player = this.players[this.playerId];
         
-        if (player) {
-            document.getElementById('finalScore').textContent = Utils.formatNumber(player.score);
-            document.getElementById('finalLength').textContent = player.segments.length;
-            
-            // Vérifier nouveau record
-            if (player.score > this.bestScore) {
-                document.getElementById('newRecord').classList.remove('hidden');
-            }
+        // Remettre le curseur normal
+        this.canvas.style.cursor = 'default';
+        
+        // Remplir les statistiques de la partie
+        document.getElementById('statFinalScore').textContent = Utils.formatNumber(stats.finalScore);
+        document.getElementById('statFinalLength').textContent = stats.finalLength;
+        document.getElementById('statKills').textContent = stats.kills;
+        document.getElementById('statGameTime').textContent = this.formatTime(stats.gameTime);
+        
+        // Remplir les statistiques globales
+        document.getElementById('statBestScore').textContent = Utils.formatNumber(stats.bestScore);
+        document.getElementById('statGamesPlayed').textContent = stats.gamesPlayed;
+        document.getElementById('statTotalScore').textContent = Utils.formatNumber(stats.totalScore);
+        document.getElementById('statTotalKills').textContent = stats.totalKills;
+        document.getElementById('statTotalDeaths').textContent = stats.totalDeaths;
+        document.getElementById('statTotalTime').textContent = this.formatTime(stats.totalTimePlayed, true);
+        
+        // Afficher le banner de nouveau record si applicable
+        if (stats.newRecord) {
+            document.getElementById('newRecordBanner').classList.remove('hidden');
         }
         
-        document.getElementById('deathScreen').classList.remove('hidden');
+        // Afficher l'écran de statistiques
+        document.getElementById('statsScreen').classList.remove('hidden');
+    }
+
+    formatTime(seconds, showHours = false) {
+        if (showHours) {
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            
+            if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${secs}s`;
+            } else {
+                return `${secs}s`;
+            }
+        } else {
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            
+            if (minutes > 0) {
+                return `${minutes}m ${secs}s`;
+            } else {
+                return `${secs}s`;
+            }
+        }
     }
 
     respawn() {
-        document.getElementById('deathScreen').classList.add('hidden');
-        document.getElementById('newRecord').classList.add('hidden');
+        document.getElementById('statsScreen').classList.add('hidden');
+        document.getElementById('newRecordBanner').classList.add('hidden');
         this.gameRunning = true;
+        this.kills = 0;
+        this.gameStartTime = Date.now();
+        
+        // Remettre le curseur de jeu
+        this.canvas.style.cursor = 'crosshair';
+        
+        // Réinitialiser les compteurs
+        document.getElementById('currentKills').textContent = '0';
         
         this.socket.emit('joinGame', {
             color: this.playerColor
@@ -585,8 +673,10 @@ class SlitherGame {
         
         if (this.isPaused) {
             pauseScreen.classList.remove('hidden');
+            this.canvas.style.cursor = 'default';
         } else {
             pauseScreen.classList.add('hidden');
+            this.canvas.style.cursor = 'crosshair';
         }
     }
 

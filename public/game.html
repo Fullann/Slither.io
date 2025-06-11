@@ -18,7 +18,7 @@
         
         canvas {
             display: block;
-            cursor: none;
+            cursor: crosshair;
         }
 
         .game-ui {
@@ -56,6 +56,17 @@
             50% { transform: scale(1.1); }
             100% { transform: scale(1); }
         }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .bot-indicator {
+            font-size: 0.7em;
+            opacity: 0.7;
+        }
     </style>
 </head>
 <body>
@@ -70,6 +81,7 @@
                 <div class="text-lg font-bold" id="playerName">Chargement...</div>
                 <div class="text-sm text-gray-300 mt-1">Score: <span id="currentScore" class="text-yellow-400 font-bold">0</span></div>
                 <div class="text-xs text-gray-400">Longueur: <span id="currentLength">5</span></div>
+                <div class="text-xs text-gray-400">Kills: <span id="currentKills">0</span></div>
                 <div class="text-xs text-gray-400">Meilleur: <span id="bestScore">0</span></div>
             </div>
         </div>
@@ -110,14 +122,70 @@
             </button>
         </div>
 
-        <!-- Écran de mort -->
-        <div id="deathScreen" class="death-screen fixed inset-0 flex items-center justify-center hidden">
-            <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center text-white border border-white/20 max-w-md">
+        <!-- Écran de statistiques de mort -->
+        <div id="statsScreen" class="death-screen fixed inset-0 flex items-center justify-center hidden">
+            <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center text-white border border-white/20 max-w-2xl w-full mx-4">
                 <div class="text-6xl mb-4">💀</div>
-                <h2 class="text-3xl font-bold mb-4">Game Over!</h2>
-                <div class="text-lg mb-2">Score final: <span id="finalScore" class="font-bold text-yellow-400">0</span></div>
-                <div class="text-sm text-gray-300 mb-2">Longueur: <span id="finalLength">5</span></div>
-                <div class="text-sm text-gray-300 mb-6">Nouveau record: <span id="newRecord" class="text-green-400 hidden">🎉 OUI!</span></div>
+                <h2 class="text-3xl font-bold mb-6">Game Over!</h2>
+                
+                <!-- Statistiques de la partie -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="stat-card rounded-lg p-4">
+                        <div class="text-2xl font-bold text-yellow-400" id="statFinalScore">0</div>
+                        <div class="text-xs text-gray-300">Score Final</div>
+                    </div>
+                    <div class="stat-card rounded-lg p-4">
+                        <div class="text-2xl font-bold text-blue-400" id="statFinalLength">0</div>
+                        <div class="text-xs text-gray-300">Longueur Max</div>
+                    </div>
+                    <div class="stat-card rounded-lg p-4">
+                        <div class="text-2xl font-bold text-red-400" id="statKills">0</div>
+                        <div class="text-xs text-gray-300">Kills</div>
+                    </div>
+                    <div class="stat-card rounded-lg p-4">
+                        <div class="text-2xl font-bold text-green-400" id="statGameTime">0s</div>
+                        <div class="text-xs text-gray-300">Temps de jeu</div>
+                    </div>
+                </div>
+
+                <!-- Statistiques globales -->
+                <div class="bg-white/5 rounded-lg p-4 mb-6">
+                    <h3 class="text-lg font-bold mb-4">📊 Statistiques Globales</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                        <div class="text-center">
+                            <div class="text-xl font-bold text-yellow-400" id="statBestScore">0</div>
+                            <div class="text-gray-400">Meilleur Score</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xl font-bold text-blue-400" id="statGamesPlayed">0</div>
+                            <div class="text-gray-400">Parties Jouées</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xl font-bold text-purple-400" id="statTotalScore">0</div>
+                            <div class="text-gray-400">Score Total</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xl font-bold text-red-400" id="statTotalKills">0</div>
+                            <div class="text-gray-400">Total Kills</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xl font-bold text-gray-400" id="statTotalDeaths">0</div>
+                            <div class="text-gray-400">Total Morts</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-xl font-bold text-green-400" id="statTotalTime">0h</div>
+                            <div class="text-gray-400">Temps Total</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nouveau record -->
+                <div id="newRecordBanner" class="bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg p-3 mb-6 hidden">
+                    <div class="text-2xl">🎉 NOUVEAU RECORD! 🎉</div>
+                    <div class="text-sm">Félicitations pour votre nouveau meilleur score!</div>
+                </div>
+
+                <!-- Boutons d'action -->
                 <div class="space-y-3">
                     <button id="playAgainBtn" class="w-full bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:from-green-600 hover:to-blue-700 transition-all">
                         🎮 Rejouer
