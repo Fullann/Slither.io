@@ -46,7 +46,9 @@ let gameState = {
     players: {},
     food: []
 };
-
+const TICK_RATE = 10; // 10 FPS
+const TICK_INTERVAL = 1000 / TICK_RATE;
+const MANAGE_BOT = 15000; // Gérer les bots toutes les 10 secondes
 const MIN_PLAYERS = 8; // Minimum de joueurs (humains + bots)
 const BOT_NAMES = [
     'Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta', 'Eta', 'Theta',
@@ -666,13 +668,12 @@ setInterval(() => {
         players: allPlayers,
         food: food
     });
-}, 1000 / 30); // 30 FPS
+}, TICK_INTERVAL);
 
 // Gestion périodique des bots
 setInterval(() => {
     manageBots();
-}, 10000); // Vérifier toutes les 10 secondes
-
+}, MANAGE_BOT); 
 server.listen(PORT, () => {
     console.log(`Serveur démarré sur le port ${PORT}`);
 });
