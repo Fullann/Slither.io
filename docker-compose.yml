@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  slither-game:
+    build: .
+    container_name: slither-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - JWT_SECRET=my_key
+    volumes:
+      - ./data:/usr/src/app/data
+      - game_db:/usr/src/app
+    networks:
+      - proxied
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  game_db:
+
+networks:
+  proxied:
+    external: true
