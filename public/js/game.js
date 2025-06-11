@@ -120,7 +120,9 @@ class SlitherGame {
         this.socket = io({
             auth: {
                 token: token
-            }
+            },
+            compression: false,
+            transports: ['polling', 'websocket'] 
         });
 
         this.socket.on('connect', () => {
