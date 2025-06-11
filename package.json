@@ -9,11 +9,10 @@
     "init-db": "node scripts/init-db.js"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
-    "compression": "^1.8.0",
     "express": "^4.18.2",
-    "jsonwebtoken": "^9.0.2",
     "socket.io": "^4.7.2",
+    "bcrypt": "^5.1.1",
+    "jsonwebtoken": "^9.0.2",
     "sqlite3": "^5.1.6"
   },
   "devDependencies": {
@@ -27,6 +26,6 @@
     "socket.io",
     "ai-bots"
   ],
-  "author": "Fullann",
+  "author": "Votre nom",
   "license": "MIT"
 }
