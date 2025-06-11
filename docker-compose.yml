@@ -15,11 +15,11 @@ services:
       - ./data:/usr/src/app/data
       - game_db:/usr/src/app
     networks:
-      - proxied
+      - proxy
 
 volumes:
   game_db:
 
 networks:
-  proxied:
+  proxy:
     external: true
