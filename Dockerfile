@@ -1,21 +1,30 @@
-FROM node:22-alpine
+# Étape de build pour réduire la taille de l'image finale
+FROM node:18-alpine AS builder
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
-# Copier les fichiers de dépendances
+# Copie des fichiers de dépendances
 COPY package*.json ./
 
-# Installer les dépendances
-RUN npm install && npm cache clean --force
+# Installation des dépendances en mode production
+RUN npm i --production
 
-# Copier le code de l'application
+# Copie du code source de l'application
 COPY . .
 
-# Créer le répertoire data
-RUN mkdir -p data
+# Image finale, plus légère
+FROM node:18-alpine
 
-# Exposer le port
+WORKDIR /app
+
+# Installation des dépendances nécessaires à l'exécution de sqlite3
+RUN apk add --no-cache --virtual .sqlite-libs sqlite-libs
+
+# Copie uniquement les fichiers nécessaires depuis l'étape de build
+COPY --from=builder /app ./
+
+# Expose le port utilisé par le serveur (3000 par défaut)
 EXPOSE 3000
 
-# Commande de démarrage
+# Démarre le serveur Node.js
 CMD ["node", "server.js"]
