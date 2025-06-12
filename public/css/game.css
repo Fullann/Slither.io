@@ -1,0 +1,73 @@
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #1a1a2e;
+    font-family: "Arial", sans-serif;
+}
+
+canvas {
+    display: block;
+    cursor: crosshair;
+}
+
+.game-ui {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.ui-element {
+    pointer-events: auto;
+}
+
+.leaderboard {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.death-screen {
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(10px);
+    z-index: 1010;
+    pointer-events: auto;
+}
+
+.boost-effect {
+    animation: boostPulse 0.5s ease-in-out;
+}
+
+@keyframes boostPulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.1);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+.stat-card {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.bot-indicator {
+    font-size: 0.7em;
+    opacity: 0.7;
+}
+
+#statsScreen {
+    z-index: 1000;
+}

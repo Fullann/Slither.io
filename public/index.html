@@ -1,154 +1,188 @@
 <!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Slither.io Clone - Connexion</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body {
-            background: linear-gradient(45deg, #1a1a2e, #16213e, #0f3460);
-            min-height: 100vh;
-        }
-        .form-container {
-            transition: transform 0.6s ease-in-out;
-        }
-        .form-container.flipped {
-            transform: rotateY(180deg);
-        }
-    </style>
-</head>
-<body class="flex items-center justify-center min-h-screen">
-    <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 max-w-md w-full mx-4">
-        <div class="text-center mb-8">
-            <h1 class="text-4xl font-bold text-white mb-2">🐍 Slither.io</h1>
-            <p class="text-gray-300" id="subtitle">Connectez-vous pour jouer</p>
+    <link rel="stylesheet" href="/css/login.css" />
+  </head>
+  <body class="flex items-center justify-center min-h-screen">
+    <div
+      class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-white/20 max-w-md w-full mx-4"
+    >
+      <div class="text-center mb-8">
+        <h1 class="text-4xl font-bold text-white mb-2">🐍 Slither.io</h1>
+        <p class="text-gray-300" id="subtitle">Connectez-vous pour jouer</p>
+      </div>
+
+      <!-- Formulaire de connexion -->
+      <form id="loginForm" class="space-y-6">
+        <div>
+          <label class="block text-white text-sm font-medium mb-2"
+            >Nom d'utilisateur</label
+          >
+          <input
+            type="text"
+            id="loginUsername"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Votre nom d'utilisateur"
+            required
+          />
         </div>
 
-        <!-- Formulaire de connexion -->
-        <form id="loginForm" class="space-y-6">
-            <div>
-                <label class="block text-white text-sm font-medium mb-2">Nom d'utilisateur</label>
-                <input 
-                    type="text" 
-                    id="loginUsername" 
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Votre nom d'utilisateur"
-                    required
-                >
-            </div>
-
-            <div>
-                <label class="block text-white text-sm font-medium mb-2">Mot de passe</label>
-                <input 
-                    type="password" 
-                    id="loginPassword" 
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Votre mot de passe"
-                    required
-                >
-            </div>
-
-            <button 
-                type="submit" 
-                class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold py-3 px-6 rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 transform hover:scale-105"
-            >
-                🎮 Se connecter
-            </button>
-
-            <div class="text-center">
-                <button type="button" id="showRegister" class="text-blue-400 hover:text-blue-300 text-sm">
-                    Pas de compte ? Créer un compte
-                </button>
-            </div>
-        </form>
-
-        <!-- Formulaire d'inscription -->
-        <form id="registerForm" class="space-y-6 hidden">
-            <div>
-                <label class="block text-white text-sm font-medium mb-2">Nom d'utilisateur</label>
-                <input 
-                    type="text" 
-                    id="registerUsername" 
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Choisir un nom d'utilisateur"
-                    maxlength="20"
-                    required
-                >
-            </div>
-
-            <div>
-                <label class="block text-white text-sm font-medium mb-2">Email</label>
-                <input 
-                    type="email" 
-                    id="registerEmail" 
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Votre adresse email"
-                    required
-                >
-            </div>
-
-            <div>
-                <label class="block text-white text-sm font-medium mb-2">Mot de passe</label>
-                <input 
-                    type="password" 
-                    id="registerPassword" 
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Au moins 6 caractères"
-                    minlength="6"
-                    required
-                >
-            </div>
-
-            <div>
-                <label class="block text-white text-sm font-medium mb-2">Confirmer le mot de passe</label>
-                <input 
-                    type="password" 
-                    id="confirmPassword" 
-                    class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Confirmer le mot de passe"
-                    required
-                >
-            </div>
-
-            <div>
-                <label class="block text-white text-sm font-medium mb-2">Couleur du serpent</label>
-                <div class="grid grid-cols-6 gap-2">
-                    <div class="color-option w-8 h-8 rounded-full bg-red-500 cursor-pointer border-2 border-transparent hover:border-white transition-all" data-color="#ef4444"></div>
-                    <div class="color-option w-8 h-8 rounded-full bg-blue-500 cursor-pointer border-2 border-transparent hover:border-white transition-all" data-color="#3b82f6"></div>
-                    <div class="color-option w-8 h-8 rounded-full bg-green-500 cursor-pointer border-2 border-transparent hover:border-white transition-all" data-color="#10b981"></div>
-                    <div class="color-option w-8 h-8 rounded-full bg-yellow-500 cursor-pointer border-2 border-transparent hover:border-white transition-all" data-color="#f59e0b"></div>
-                    <div class="color-option w-8 h-8 rounded-full bg-purple-500 cursor-pointer border-2 border-transparent hover:border-white transition-all" data-color="#8b5cf6"></div>
-                    <div class="color-option w-8 h-8 rounded-full bg-pink-500 cursor-pointer border-2 border-transparent hover:border-white transition-all" data-color="#ec4899"></div>
-                </div>
-                <input type="hidden" id="selectedColor" value="#ef4444">
-            </div>
-
-            <button 
-                type="submit" 
-                class="w-full bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:from-green-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105"
-            >
-                ✨ Créer un compte
-            </button>
-
-            <div class="text-center">
-                <button type="button" id="showLogin" class="text-blue-400 hover:text-blue-300 text-sm">
-                    Déjà un compte ? Se connecter
-                </button>
-            </div>
-        </form>
-
-        <!-- Messages d'erreur -->
-        <div id="errorMessage" class="mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-200 text-sm hidden"></div>
-        
-        <!-- Indicateur de chargement -->
-        <div id="loadingIndicator" class="mt-4 text-center hidden">
-            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-            <span class="ml-2 text-white text-sm">Connexion...</span>
+        <div>
+          <label class="block text-white text-sm font-medium mb-2"
+            >Mot de passe</label
+          >
+          <input
+            type="password"
+            id="loginPassword"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Votre mot de passe"
+            required
+          />
         </div>
+
+        <button
+          type="submit"
+          class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white font-bold py-3 px-6 rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all duration-200 transform hover:scale-105"
+        >
+          🎮 Se connecter
+        </button>
+
+        <div class="text-center">
+          <button
+            type="button"
+            id="showRegister"
+            class="text-blue-400 hover:text-blue-300 text-sm"
+          >
+            Pas de compte ? Créer un compte
+          </button>
+        </div>
+      </form>
+
+      <!-- Formulaire d'inscription -->
+      <form id="registerForm" class="space-y-6 hidden">
+        <div>
+          <label class="block text-white text-sm font-medium mb-2"
+            >Nom d'utilisateur</label
+          >
+          <input
+            type="text"
+            id="registerUsername"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Choisir un nom d'utilisateur"
+            maxlength="20"
+            required
+          />
+        </div>
+
+        <div>
+          <label class="block text-white text-sm font-medium mb-2">Email</label>
+          <input
+            type="email"
+            id="registerEmail"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Votre adresse email"
+            required
+          />
+        </div>
+
+        <div>
+          <label class="block text-white text-sm font-medium mb-2"
+            >Mot de passe</label
+          >
+          <input
+            type="password"
+            id="registerPassword"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Au moins 6 caractères"
+            minlength="6"
+            required
+          />
+        </div>
+
+        <div>
+          <label class="block text-white text-sm font-medium mb-2"
+            >Confirmer le mot de passe</label
+          >
+          <input
+            type="password"
+            id="confirmPassword"
+            class="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="Confirmer le mot de passe"
+            required
+          />
+        </div>
+
+        <div>
+          <label class="block text-white text-sm font-medium mb-2"
+            >Couleur du serpent</label
+          >
+          <div class="grid grid-cols-6 gap-2">
+            <div
+              class="color-option w-8 h-8 rounded-full bg-red-500 cursor-pointer border-2 border-transparent hover:border-white transition-all"
+              data-color="#ef4444"
+            ></div>
+            <div
+              class="color-option w-8 h-8 rounded-full bg-blue-500 cursor-pointer border-2 border-transparent hover:border-white transition-all"
+              data-color="#3b82f6"
+            ></div>
+            <div
+              class="color-option w-8 h-8 rounded-full bg-green-500 cursor-pointer border-2 border-transparent hover:border-white transition-all"
+              data-color="#10b981"
+            ></div>
+            <div
+              class="color-option w-8 h-8 rounded-full bg-yellow-500 cursor-pointer border-2 border-transparent hover:border-white transition-all"
+              data-color="#f59e0b"
+            ></div>
+            <div
+              class="color-option w-8 h-8 rounded-full bg-purple-500 cursor-pointer border-2 border-transparent hover:border-white transition-all"
+              data-color="#8b5cf6"
+            ></div>
+            <div
+              class="color-option w-8 h-8 rounded-full bg-pink-500 cursor-pointer border-2 border-transparent hover:border-white transition-all"
+              data-color="#ec4899"
+            ></div>
+          </div>
+          <input type="hidden" id="selectedColor" value="#ef4444" />
+        </div>
+
+        <button
+          type="submit"
+          class="w-full bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:from-green-600 hover:to-blue-700 transition-all duration-200 transform hover:scale-105"
+        >
+          ✨ Créer un compte
+        </button>
+
+        <div class="text-center">
+          <button
+            type="button"
+            id="showLogin"
+            class="text-blue-400 hover:text-blue-300 text-sm"
+          >
+            Déjà un compte ? Se connecter
+          </button>
+        </div>
+      </form>
+
+      <!-- Messages d'erreur -->
+      <div
+        id="errorMessage"
+        class="mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-200 text-sm hidden"
+      ></div>
+
+      <!-- Indicateur de chargement -->
+      <div id="loadingIndicator" class="mt-4 text-center hidden">
+        <div
+          class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-white"
+        ></div>
+        <span class="ml-2 text-white text-sm">Connexion...</span>
+      </div>
     </div>
 
     <script src="/js/auth.js"></script>
-</body>
+  </body>
 </html>

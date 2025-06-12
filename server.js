@@ -12,7 +12,7 @@ const server = http.createServer(app);
 const io = socketIo(server);
 
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = "your-secret-key-change-in-production";
+const JWT_SECRET = "secret_key";
 
 // Middleware
 app.use(express.json());
@@ -46,9 +46,9 @@ let gameState = {
   players: {},
   food: [],
 };
-const TICK_RATE = 30; // 10 FPS
+const TICK_RATE = 30; // 30 FPS
 const TICK_INTERVAL = 1000 / TICK_RATE;
-const MANAGE_BOT = 15000; // Gérer les bots toutes les 10 secondes
+const MANAGE_BOT = 10000; // Gérer les bots toutes les 10 secondes
 const MIN_PLAYERS = 8; // Minimum de joueurs (humains + bots)
 const BOT_NAMES = [
   "Alpha",
@@ -726,8 +726,8 @@ io.on("connection", (socket) => {
   });
 
   // Déconnexion
-  socket.on("disconnect", (reason) => {
-    console.log("Joueur déconnecté:",reason);
+  socket.on("disconnect", () => {
+    console.log("Joueur déconnecté:", socket.username);
 
     if (players[socket.id]) {
       const gameTime = Math.floor((Date.now() - socket.gameStartTime) / 1000);
