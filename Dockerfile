@@ -1,5 +1,4 @@
-# Étape de build pour réduire la taille de l'image finale
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -12,8 +11,7 @@ RUN npm i --production
 # Copie du code source de l'application
 COPY . .
 
-# Image finale, plus légère
-FROM node:18-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
