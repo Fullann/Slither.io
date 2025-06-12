@@ -120,12 +120,23 @@ class SlitherGame {
     }
 
     this.socket = io({
-      transports: ["websocket"],
-      auth: {
-        token: token,
-      },
+      auth: { token: token },
       compression: false,
+      transports: ["polling", "websocket"],
     });
+
+    this.latency = 0;
+    setInterval(() => {
+      const start = Date.now();
+      this.socket.emit("ping", () => {
+        this.latency = Date.now() - start;
+        // Optionnel : afficher dans la console
+        console.log("Latence:", this.latency, "ms");
+        // Mettre à jour l’affichage
+        document.getElementById("latencyIndicator").textContent =
+          this.latency + " ms";
+      });
+    }, 1000);
 
     this.socket.on("connect", () => {
       console.log("Connecté au serveur");

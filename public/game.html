@@ -1,213 +1,317 @@
 <!-- public/game.html -->
 <!DOCTYPE html>
 <html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Slither.io Clone</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background: #1a1a2e;
-            font-family: 'Arial', sans-serif;
-        }
-        
-        canvas {
-            display: block;
-            cursor: crosshair;
-        }
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #1a1a2e;
+        font-family: "Arial", sans-serif;
+      }
 
-        .game-ui {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            pointer-events: none;
-            z-index: 10;
-        }
+      canvas {
+        display: block;
+        cursor: crosshair;
+      }
 
-        .ui-element {
-            pointer-events: auto;
-        }
+      .game-ui {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: 10;
+      }
 
-        .leaderboard {
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(10px);
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
+      .ui-element {
+        pointer-events: auto;
+      }
 
-        .death-screen {
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(10px);
-        }
+      .leaderboard {
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(10px);
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
 
-        .boost-effect {
-            animation: boostPulse 0.5s ease-in-out;
-        }
+      .death-screen {
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(10px);
+        z-index: 1010;
+        pointer-events: auto;
+      }
 
-        @keyframes boostPulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
+      .boost-effect {
+        animation: boostPulse 0.5s ease-in-out;
+      }
 
-        .stat-card {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
+      @keyframes boostPulse {
+        0% {
+          transform: scale(1);
         }
+        50% {
+          transform: scale(1.1);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
 
-        .bot-indicator {
-            font-size: 0.7em;
-            opacity: 0.7;
-        }
+      .stat-card {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .bot-indicator {
+        font-size: 0.7em;
+        opacity: 0.7;
+      }
+      #statsScreen {
+        z-index: 1000; 
+      }
+
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <canvas id="gameCanvas"></canvas>
-    
+
     <!-- Interface utilisateur -->
     <div class="game-ui">
-        <!-- Informations utilisateur -->
-        <div class="absolute top-4 left-4 ui-element">
-            <div class="bg-black/70 backdrop-blur-lg rounded-lg p-4 text-white border border-white/20">
-                <div class="text-xs text-gray-300">Joueur</div>
-                <div class="text-lg font-bold" id="playerName">Chargement...</div>
-                <div class="text-sm text-gray-300 mt-1">Score: <span id="currentScore" class="text-yellow-400 font-bold">0</span></div>
-                <div class="text-xs text-gray-400">Longueur: <span id="currentLength">5</span></div>
-                <div class="text-xs text-gray-400">Kills: <span id="currentKills">0</span></div>
-                <div class="text-xs text-gray-400">Meilleur: <span id="bestScore">0</span></div>
-            </div>
-        </div>
+      <!-- Informations utilisateur -->
+      <div class="absolute top-4 left-4 ui-element">
+        <div
+          class="bg-black/70 backdrop-blur-lg rounded-lg p-4 text-white border border-white/20"
+        >
+          <div class="text-xs text-gray-300">Joueur</div>
+          <div class="text-lg font-bold" id="playerName">Chargement...</div>
+          <div class="text-sm text-gray-300 mt-1">
+            Score:
+            <span id="currentScore" class="text-yellow-400 font-bold">0</span>
+          </div>
+          <div class="text-xs text-gray-400">
+            Longueur: <span id="currentLength">5</span>
+          </div>
+          <div class="text-xs text-gray-400">
+            Kills: <span id="currentKills">0</span>
+          </div>
+          <div class="text-xs text-gray-400">
+            Meilleur: <span id="bestScore">0</span>
+          </div>
+          <div id="latencyIndicator" class="text-xs text-gray-400">0 ms</div>
 
-        <!-- Indicateur de boost -->
-        <div class="absolute top-4 left-1/2 transform -translate-x-1/2 ui-element">
-            <div id="boostIndicator" class="bg-orange-500/70 backdrop-blur-lg rounded-lg px-4 py-2 text-white font-bold hidden">
-                🚀 BOOST ACTIF
-            </div>
         </div>
+      </div>
 
-        <!-- Classement -->
-        <div class="absolute top-4 right-4 ui-element">
-            <div class="leaderboard p-4 text-white w-48">
-                <h3 class="text-lg font-bold mb-3 text-center">🏆 Classement</h3>
-                <div id="leaderboardList" class="space-y-2">
-                    <!-- Dynamiquement rempli -->
+      <!-- Indicateur de boost -->
+      <div
+        class="absolute top-4 left-1/2 transform -translate-x-1/2 ui-element"
+      >
+        <div
+          id="boostIndicator"
+          class="bg-orange-500/70 backdrop-blur-lg rounded-lg px-4 py-2 text-white font-bold hidden"
+        >
+          🚀 BOOST ACTIF
+        </div>
+      </div>
+
+      <!-- Classement -->
+      <div class="absolute top-4 right-4 ui-element">
+        <div class="leaderboard p-4 text-white w-48">
+          <h3 class="text-lg font-bold mb-3 text-center">🏆 Classement</h3>
+          <div id="leaderboardList" class="space-y-2">
+            <!-- Dynamiquement rempli -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Mini-carte -->
+      <div class="absolute bottom-4 right-4 ui-element">
+        <div
+          class="bg-black/70 backdrop-blur-lg rounded-lg p-2 border border-white/20"
+        >
+          <canvas
+            id="minimap"
+            width="150"
+            height="150"
+            class="rounded"
+          ></canvas>
+        </div>
+      </div>
+
+      <!-- Contrôles et déconnexion -->
+      <div class="absolute bottom-4 left-4 ui-element">
+        <div
+          class="bg-black/70 backdrop-blur-lg rounded-lg p-3 text-white text-xs border border-white/20 mb-2"
+        >
+          <div class="mb-1">🖱️ Souris: Diriger</div>
+          <div class="mb-1">🚀 Clic: Accélérer</div>
+          <div>⏸️ Espace: Pause</div>
+        </div>
+        <button
+          id="logoutBtn"
+          class="w-full bg-red-500/70 hover:bg-red-500 text-white text-xs py-2 px-3 rounded-lg transition-all"
+        >
+          🚪 Déconnexion
+        </button>
+      </div>
+
+      <!-- Écran de statistiques de mort -->
+      <div
+        id="statsScreen"
+        class="death-screen fixed inset-0 flex items-center justify-center hidden"
+      >
+        <div
+          class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center text-white border border-white/20 max-w-2xl w-full mx-4"
+        >
+          <div class="text-6xl mb-4">💀</div>
+          <h2 class="text-3xl font-bold mb-6">Game Over!</h2>
+
+          <!-- Statistiques de la partie -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="stat-card rounded-lg p-4">
+              <div
+                class="text-2xl font-bold text-yellow-400"
+                id="statFinalScore"
+              >
+                0
+              </div>
+              <div class="text-xs text-gray-300">Score Final</div>
+            </div>
+            <div class="stat-card rounded-lg p-4">
+              <div
+                class="text-2xl font-bold text-blue-400"
+                id="statFinalLength"
+              >
+                0
+              </div>
+              <div class="text-xs text-gray-300">Longueur Max</div>
+            </div>
+            <div class="stat-card rounded-lg p-4">
+              <div class="text-2xl font-bold text-red-400" id="statKills">
+                0
+              </div>
+              <div class="text-xs text-gray-300">Kills</div>
+            </div>
+            <div class="stat-card rounded-lg p-4">
+              <div class="text-2xl font-bold text-green-400" id="statGameTime">
+                0s
+              </div>
+              <div class="text-xs text-gray-300">Temps de jeu</div>
+            </div>
+          </div>
+
+          <!-- Statistiques globales -->
+          <div class="bg-white/5 rounded-lg p-4 mb-6">
+            <h3 class="text-lg font-bold mb-4">📊 Statistiques Globales</h3>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+              <div class="text-center">
+                <div
+                  class="text-xl font-bold text-yellow-400"
+                  id="statBestScore"
+                >
+                  0
                 </div>
+                <div class="text-gray-400">Meilleur Score</div>
+              </div>
+              <div class="text-center">
+                <div
+                  class="text-xl font-bold text-blue-400"
+                  id="statGamesPlayed"
+                >
+                  0
+                </div>
+                <div class="text-gray-400">Parties Jouées</div>
+              </div>
+              <div class="text-center">
+                <div
+                  class="text-xl font-bold text-purple-400"
+                  id="statTotalScore"
+                >
+                  0
+                </div>
+                <div class="text-gray-400">Score Total</div>
+              </div>
+              <div class="text-center">
+                <div class="text-xl font-bold text-red-400" id="statTotalKills">
+                  0
+                </div>
+                <div class="text-gray-400">Total Kills</div>
+              </div>
+              <div class="text-center">
+                <div
+                  class="text-xl font-bold text-gray-400"
+                  id="statTotalDeaths"
+                >
+                  0
+                </div>
+                <div class="text-gray-400">Total Morts</div>
+              </div>
+              <div class="text-center">
+                <div
+                  class="text-xl font-bold text-green-400"
+                  id="statTotalTime"
+                >
+                  0h
+                </div>
+                <div class="text-gray-400">Temps Total</div>
+              </div>
             </div>
-        </div>
+          </div>
 
-        <!-- Mini-carte -->
-        <div class="absolute bottom-4 right-4 ui-element">
-            <div class="bg-black/70 backdrop-blur-lg rounded-lg p-2 border border-white/20">
-                <canvas id="minimap" width="150" height="150" class="rounded"></canvas>
+          <!-- Nouveau record -->
+          <div
+            id="newRecordBanner"
+            class="bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg p-3 mb-6 hidden"
+          >
+            <div class="text-2xl">🎉 NOUVEAU RECORD! 🎉</div>
+            <div class="text-sm">
+              Félicitations pour votre nouveau meilleur score!
             </div>
-        </div>
+          </div>
 
-        <!-- Contrôles et déconnexion -->
-        <div class="absolute bottom-4 left-4 ui-element">
-            <div class="bg-black/70 backdrop-blur-lg rounded-lg p-3 text-white text-xs border border-white/20 mb-2">
-                <div class="mb-1">🖱️ Souris: Diriger</div>
-                <div class="mb-1">🚀 Clic: Accélérer</div>
-                <div>⏸️ Espace: Pause</div>
-            </div>
-            <button id="logoutBtn" class="w-full bg-red-500/70 hover:bg-red-500 text-white text-xs py-2 px-3 rounded-lg transition-all">
-                🚪 Déconnexion
+          <!-- Boutons d'action -->
+          <div class="space-y-3">
+            <button
+              id="playAgainBtn"
+              class="w-full bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:from-green-600 hover:to-blue-700 transition-all"
+            >
+              🎮 Rejouer
             </button>
+            <button
+              id="backToMenuBtn"
+              class="w-full bg-gradient-to-r from-gray-500 to-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:from-gray-600 hover:to-gray-700 transition-all"
+            >
+              🏠 Menu principal
+            </button>
+          </div>
         </div>
+      </div>
 
-        <!-- Écran de statistiques de mort -->
-        <div id="statsScreen" class="death-screen fixed inset-0 flex items-center justify-center hidden">
-            <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center text-white border border-white/20 max-w-2xl w-full mx-4">
-                <div class="text-6xl mb-4">💀</div>
-                <h2 class="text-3xl font-bold mb-6">Game Over!</h2>
-                
-                <!-- Statistiques de la partie -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div class="stat-card rounded-lg p-4">
-                        <div class="text-2xl font-bold text-yellow-400" id="statFinalScore">0</div>
-                        <div class="text-xs text-gray-300">Score Final</div>
-                    </div>
-                    <div class="stat-card rounded-lg p-4">
-                        <div class="text-2xl font-bold text-blue-400" id="statFinalLength">0</div>
-                        <div class="text-xs text-gray-300">Longueur Max</div>
-                    </div>
-                    <div class="stat-card rounded-lg p-4">
-                        <div class="text-2xl font-bold text-red-400" id="statKills">0</div>
-                        <div class="text-xs text-gray-300">Kills</div>
-                    </div>
-                    <div class="stat-card rounded-lg p-4">
-                        <div class="text-2xl font-bold text-green-400" id="statGameTime">0s</div>
-                        <div class="text-xs text-gray-300">Temps de jeu</div>
-                    </div>
-                </div>
-
-                <!-- Statistiques globales -->
-                <div class="bg-white/5 rounded-lg p-4 mb-6">
-                    <h3 class="text-lg font-bold mb-4">📊 Statistiques Globales</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                        <div class="text-center">
-                            <div class="text-xl font-bold text-yellow-400" id="statBestScore">0</div>
-                            <div class="text-gray-400">Meilleur Score</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-xl font-bold text-blue-400" id="statGamesPlayed">0</div>
-                            <div class="text-gray-400">Parties Jouées</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-xl font-bold text-purple-400" id="statTotalScore">0</div>
-                            <div class="text-gray-400">Score Total</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-xl font-bold text-red-400" id="statTotalKills">0</div>
-                            <div class="text-gray-400">Total Kills</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-xl font-bold text-gray-400" id="statTotalDeaths">0</div>
-                            <div class="text-gray-400">Total Morts</div>
-                        </div>
-                        <div class="text-center">
-                            <div class="text-xl font-bold text-green-400" id="statTotalTime">0h</div>
-                            <div class="text-gray-400">Temps Total</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Nouveau record -->
-                <div id="newRecordBanner" class="bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg p-3 mb-6 hidden">
-                    <div class="text-2xl">🎉 NOUVEAU RECORD! 🎉</div>
-                    <div class="text-sm">Félicitations pour votre nouveau meilleur score!</div>
-                </div>
-
-                <!-- Boutons d'action -->
-                <div class="space-y-3">
-                    <button id="playAgainBtn" class="w-full bg-gradient-to-r from-green-500 to-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:from-green-600 hover:to-blue-700 transition-all">
-                        🎮 Rejouer
-                    </button>
-                    <button id="backToMenuBtn" class="w-full bg-gradient-to-r from-gray-500 to-gray-600 text-white font-bold py-3 px-6 rounded-lg hover:from-gray-600 hover:to-gray-700 transition-all">
-                        🏠 Menu principal
-                    </button>
-                </div>
-            </div>
+      <!-- Écran de pause -->
+      <div
+        id="pauseScreen"
+        class="death-screen fixed inset-0 flex items-center justify-center hidden"
+      >
+        <div
+          class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center text-white border border-white/20"
+        >
+          <div class="text-4xl mb-4">⏸️</div>
+          <h2 class="text-2xl font-bold mb-4">Jeu en pause</h2>
+          <p class="text-gray-300 mb-6">Appuyez sur Espace pour continuer</p>
         </div>
-
-        <!-- Écran de pause -->
-        <div id="pauseScreen" class="death-screen fixed inset-0 flex items-center justify-center hidden">
-            <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-8 text-center text-white border border-white/20">
-                <div class="text-4xl mb-4">⏸️</div>
-                <h2 class="text-2xl font-bold mb-4">Jeu en pause</h2>
-                <p class="text-gray-300 mb-6">Appuyez sur Espace pour continuer</p>
-            </div>
-        </div>
+      </div>
     </div>
 
     <script src="/js/utils.js"></script>
     <script src="/js/game.js"></script>
-</body>
+  </body>
 </html>
