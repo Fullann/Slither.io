@@ -159,16 +159,6 @@ slither-io-clone/
 
 ---
 
-## 🔄 Répartition du travail
-
-- **Développement serveur & API** : Füllemann,Racaj
-- **Développement client & interface** : Füllemann,Racaj
-- **Implémentation IA & bots** : Füllemann
-- **Gestion base de données & sécurité** : Racaj
-- **Conteneurisation Docker & déploiement** : Racaj
-- **Tests & optimisation** : Füllemann
-
----
 
 ## 📝 Licence
 

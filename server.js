@@ -46,7 +46,7 @@ let gameState = {
   players: {},
   food: [],
 };
-const TICK_RATE = 30; // 30 FPS
+const TICK_RATE = 10; // 30 FPS
 const TICK_INTERVAL = 1000 / TICK_RATE;
 const MANAGE_BOT = 10000; // Gérer les bots toutes les 10 secondes
 const MIN_PLAYERS = 8; // Minimum de joueurs (humains + bots)
